@@ -78,12 +78,29 @@ echo "positive_train_duration: $positive_train_duration"
 echo "positive_dev_duration: $positive_dev_duration"
 echo "positive_test_duration: $positive_test_duration"
 echo "========模型设置========"
-# echo "  workspace: $workspace"
-# echo "  num_speakers: $num_speakers"
-# echo "  use_gpu: $use_gpu"
-# echo "  gpus: $gpus"
+echo "  model_version: $model_version"
+echo "  spec_group_num: $spec_group_num"
+echo "========训练设置========"
+echo "  batch_size: $batch_size"
+echo "  window_stride_ratio: $train_window_stride_ratio"
+echo "  total_epochs: $total_epochs"
+echo "  warmup_epoch: $warmup_epoch"
+echo "  eval_on_dev_epoch_stride: $eval_on_dev_epoch_stride"
+echo "  init_lr: $init_lr"
+echo "  lr_lower_limit: $lr_lower_limit"
+echo "  weight_decay: $weight_decay"
+echo "  momentum: $momentum"
+echo "========推理设置========"
+# TODO: 需要添加推理阶段的参数设置
+echo "========工作区设置========"
+echo "  workspace: $workspace"
+echo "========设备设置========"
+echo "  use_gpu: $use_gpu"
+echo "  gpu: $gpu"
+# TODO: 多GPU分布式训练
 # echo "  proc_per_node: $proc_per_node"
 # echo "  run_stage: $run_stage"
+
 
 # 在切换目录【前】保存原始脚本目录的绝对路径
 SCRIPT_DIR=$(dirname "$(realpath "$0")") # 读取脚本及指令文件需要需要使用来源目录的绝对路径（本.sh脚本所在路径），但是在workspace工作目录下执行
@@ -129,9 +146,9 @@ if [[ $run_stage =~ (^|[[:space:]])4($|[[:space:]]) ]]; then
     echo "++++++++ Stage 4: Train the model ++++++++"
     if [[ "$use_gpu" == "true" ]]; then
     # eg.: $gpu = "0" # 使用的GPU设备ID
-        python ${SCRIPT_DIR}/local/train_model.py --workspace "$workspace" --model_version "$model_version" --batch_size "$train_batch_size" --window_stride_ratio "$train_window_stride_ratio" --total_epochs "$total_epochs" --warmup_epoch "$warmup_epoch" --init_lr "$init_lr" --lr_lower_limit "$lr_lower_limit" --weight_decay "$weight_decay" --momentum "$momentum" --gpu "$gpu" --use_gpu
+        python ${SCRIPT_DIR}/local/train_model.py --workspace "$workspace" --model_version "$model_version" --spec_group_num "$spec_group_num" --batch_size "$batch_size" --window_stride_ratio "$train_window_stride_ratio" --total_epochs "$total_epochs" --warmup_epoch "$warmup_epoch" --eval_on_dev_epoch_stride "$eval_on_dev_epoch_stride" --init_lr "$init_lr" --lr_lower_limit "$lr_lower_limit" --weight_decay "$weight_decay" --momentum "$momentum" --gpu "$gpu" --use_gpu
     else
-        python ${SCRIPT_DIR}/local/train_model.py --workspace "$workspace" --model_version "$model_version" --batch_size "$train_batch_size" --window_stride_ratio "$train_window_stride_ratio" --total_epochs "$total_epochs" --warmup_epoch "$warmup_epoch" --eval_on_dev_epoch_stride "$eval_on_dev_epoch_stride" --init_lr "$init_lr" --lr_lower_limit "$lr_lower_limit" --weight_decay "$weight_decay" --momentum "$momentum"
+        python ${SCRIPT_DIR}/local/train_model.py --workspace "$workspace" --model_version "$model_version" --spec_group_num "$spec_group_num" --batch_size "$batch_size" --window_stride_ratio "$train_window_stride_ratio" --total_epochs "$total_epochs" --warmup_epoch "$warmup_epoch" --eval_on_dev_epoch_stride "$eval_on_dev_epoch_stride" --init_lr "$init_lr" --lr_lower_limit "$lr_lower_limit" --weight_decay "$weight_decay" --momentum "$momentum"
     fi
 else
     echo "++++++++ Skipping Stage 4: Train the model ++++++++"
