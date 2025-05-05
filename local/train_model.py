@@ -183,6 +183,7 @@ def train(args):
     logger.info(f"Using device: {device}")
     
     # 加载数据集信息
+    logger.info("======== Dataset Loading ========")
     dataset_info_path = os.path.join(args.workspace, "dataset", "dataset_info.json")
     with open(dataset_info_path, 'r') as f:
         dataset_info = json.load(f)
@@ -225,7 +226,7 @@ def train(args):
     )
     
     # check dataset size
-    logger.info(f"======== Train dataset count(After delploy sliding window on neg dataset) ========")
+    logger.info(f"Train dataset count(After delploy sliding window on neg dataset)")
     logger.info(f"Train samples count: {len(train_dataset)}")
     logger.info(f"Dev samples count: {len(dev_dataset)}")
     logger.info(f"========================================")

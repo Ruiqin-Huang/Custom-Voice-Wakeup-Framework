@@ -6,13 +6,37 @@ set -e
 # ./run_audio_diarization-cluster.sh --help to see the help message
 
 # 定义默认值
-# DEFAULT_AUDIO_DIR="./example/audio_7_speakers"
-# DEFAULT_WORKSPACE="./workspaces/demo_aishell-1_7_speakers"
-# DEFAULT_NUM_SPEAKERS=2
-# DEFAULT_GPUS=""
-# DEFAULT_PROC_PER_NODE=8
-# DEFAULT_RUN_STAGE="1 2 3 4"
-# DEFAULT_USE_GPU=false
+# ======== 自定义唤醒词 ========
+DEFAULT_WAKEWORD="wakeword" # 唤醒词
+# ======== 数据集设置 ========
+DEFAULT_NEG_SOURCE_DIR="/path/to/negative/source" # 负样本数据集路径
+DEFAULT_POS_SOURCE_DIR="/path/to/positive/source" # 正样本数据集路径
+DEFAULT_NEGATIVE_TRAIN_DURATION=1000 # 负样本训练集时长（秒）
+DEFAULT_NEGATIVE_DEV_DURATION=100 # 负样本验证集时长（秒）
+DEFAULT_NEGATIVE_TEST_DURATION=100 # 负样本测试集时长（秒）
+DEFAULT_POSITIVE_TRAIN_DURATION=1000 # 正样本训练集时长（秒）
+DEFAULT_POSITIVE_DEV_DURATION=100 # 正样本验证集时长（秒）
+DEFAULT_POSITIVE_TEST_DURATION=100 # 正样本测试集时长（秒）
+# ======== 模型设置 ========
+DEFAULT_MODEL_VERSION="1.5" # 模型版本
+DEFAULT_SPEC_GROUP_NUM=5 # 频谱组数
+# ======== 训练设置 ========
+DEFAULT_BATCH_SIZE=32 # 批大小
+DEFAULT_WINDOW_STRIDE_RATIO=0.5 # 窗口步幅比率
+DEFAULT_TOTAL_EPOCHS=100 # 总训练轮数
+DEFAULT_WARMUP_EPOCH=10 # 预热轮数
+DEFAULT_EVAL_ON_DEV_EPOCH_STRIDE=5 # 验证集评估轮数步幅
+DEFAULT_INIT_LR=0.001 # 初始学习率
+DEFAULT_LR_LOWER_LIMIT=1e-6 # 学习率下限
+DEFAULT_WEIGHT_DECAY=0.0001 # 权重衰减
+DEFAULT_MOMENTUM=0.9 # 动量
+# ======== 推理设置 ========
+# TODO: 需要添加推理阶段的参数设置
+# ======== 工作区设置 ========
+DEFAULT_WORKSPACE="./workspace" # 工作目录
+# ======== 设备设置 ========
+DEFAULT_USE_GPU="false" # 是否使用GPU
+DEFAULT_GPUS="0" # GPU设备ID,目前仅支持单GPU训练
 
 # 帮助函数
 # show_usage() {
@@ -30,28 +54,52 @@ set -e
 # }
 
 # 初始化参数为默认值
-# audio_dir=$DEFAULT_AUDIO_DIR
-# workspace=$DEFAULT_WORKSPACE
-# num_speakers=$DEFAULT_NUM_SPEAKERS
-# gpus=$DEFAULT_GPUS
-# proc_per_node=$DEFAULT_PROC_PER_NODE
-# run_stage=$DEFAULT_RUN_STAGE
-# use_gpu=$DEFAULT_USE_GPU
+# ======== 自定义唤醒词 ========
+wakeword="$DEFAULT_WAKEWORD" # 唤醒词
+# ======== 数据集设置 ========
+neg_source_dir="$DEFAULT_NEG_SOURCE_DIR" # 负样本数据集路径
+pos_source_dir="$DEFAULT_POS_SOURCE_DIR" # 正样本数据集路径
+negative_train_duration="$DEFAULT_NEGATIVE_TRAIN_DURATION" # 负样本训练集时长（秒）
+negative_dev_duration="$DEFAULT_NEGATIVE_DEV_DURATION" # 负样本验证集时长（秒）
+negative_test_duration="$DEFAULT_NEGATIVE_TEST_DURATION" # 负样本测试集时长（秒）
+positive_train_duration="$DEFAULT_POSITIVE_TRAIN_DURATION" # 正样本训练集时长（秒）
+positive_dev_duration="$DEFAULT_POSITIVE_DEV_DURATION" # 正样本验证集时长（秒）
+positive_test_duration="$DEFAULT_POSITIVE_TEST_DURATION" # 正样本测试集时长（秒）
+# ======== 模型设置 ========
+model_version="$DEFAULT_MODEL_VERSION" # 模型版本
+spec_group_num="$DEFAULT_SPEC_GROUP_NUM" # 频谱组数
+# ======== 训练设置 ========
+batch_size="$DEFAULT_BATCH_SIZE" # 批大小
+train_window_stride_ratio="$DEFAULT_WINDOW_STRIDE_RATIO" # 窗口步幅比率
+total_epochs="$DEFAULT_TOTAL_EPOCHS" # 总训练轮数
+warmup_epoch="$DEFAULT_WARMUP_EPOCH" # 预热轮数
+eval_on_dev_epoch_stride="$DEFAULT_EVAL_ON_DEV_EPOCH_STRIDE" # 验证集评估轮数步幅
+init_lr="$DEFAULT_INIT_LR" # 初始学习率
+lr_lower_limit="$DEFAULT_LR_LOWER_LIMIT" # 学习率下限
+weight_decay="$DEFAULT_WEIGHT_DECAY" # 权重衰减
+momentum="$DEFAULT_MOMENTUM" # 动量
+# ======== 推理设置 ========
+# TODO: 需要添加推理阶段的参数设置
+# ======== 工作区设置 ========
+workspace="$DEFAULT_WORKSPACE" # 工作目录
+# ======== 设备设置 ========
+use_gpu="$DEFAULT_USE_GPU" # 是否使用GPU
+gpu="$DEFAULT_GPUS" # GPU设备ID,目前仅支持单GPU训练
 
 
 # 解析命令行参数
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --
-        --help)
-            show_usage
-            ;;
-        *)
-            echo "未知选项: $1"
-            show_usage
-            ;;
-    esac
-done
+# while [[ $# -gt 0 ]]; do
+#     case "$1" in
+#         --
+#         --help)
+#             show_usage
+#             ;;
+#         *)
+#             echo "未知选项: $1"
+#             show_usage
+#             ;;
+#     esac
+# done
 
 # 验证 gpu 和 use_gpu 参数的组合是否合理
 # if [[ -n "$gpus" && "$use_gpu" == "false" ]]; then # 检查$gpus是否非空
@@ -153,119 +201,3 @@ if [[ $run_stage =~ (^|[[:space:]])4($|[[:space:]]) ]]; then
 else
     echo "++++++++ Skipping Stage 4: Train the model ++++++++"
 fi
-
-# # Stage 5: Evaluate the model on test dataset
-# # 在测试集上评估模型
-# if [[ $run_stage =~ (^|[[:space:]])5($|[[:space:]]) ]]; then
-#     echo "++++++++ Stage 5: Evaluate the model on test dataset ++++++++"
-#     if [[ "$use_gpu" == "true" ]]; then
-#         python ${SCRIPT_DIR}/local/evaluate_model.py --input_dir "$audio_dir" --workspace "$workspace" --num_speakers "$num_speakers" --gpu "$gpus" --use_gpu
-#     else
-#         python ${SCRIPT_DIR}/local/evaluate_model.py --input_dir "$audio_dir" --workspace "$workspace" --num_speakers "$num_speakers"
-#     fi
-# else
-#     echo "++++++++ Skipping Stage 5: Evaluate the model on test dataset ++++++++"
-# fi
-
-# # Stage 6: Generate results
-# # 生成结果
-# if [[ $run_stage =~ (^|[[:space:]])6($|[[:space:]]) ]]; then
-#     echo "++++++++ Stage 6: Generate results ++++++++"
-#     if [[ "$use_gpu" == "true" ]]; then
-#         python ${SCRIPT_DIR}/local/generate_results.py --input_dir "$audio_dir" --workspace "$workspace" --num_speakers "$num_speakers" --gpu "$gpus" --use_gpu
-#     else
-#         python ${SCRIPT_DIR}/local/generate_results.py --input_dir "$audio_dir" --workspace "$workspace" --num_speakers "$num_speakers"
-#     fi
-# else
-#     echo "++++++++ Skipping Stage 6: Generate results ++++++++"
-# fi
-
-# # Stage 7: Continue training the model(optional)
-# # 使用额外的数据集继续训练模型（可选），数据集输入格式与原始数据集保持一致
-# if [[ $run_stage =~ (^|[[:space:]])7($|[[:space:]]) ]]; then
-#     echo "++++++++ Stage 7: Continue training the model ++++++++"
-#     if [[ "$use_gpu" == "true" ]]; then
-#         python ${SCRIPT_DIR}/local/continue_training.py --input_dir "$audio_dir" --workspace "$workspace" --num_speakers "$num_speakers" --gpu "$gpus" --use_gpu
-#     else
-#         python ${SCRIPT_DIR}/local/continue_training.py --input_dir "$audio_dir" --workspace "$workspace" --num_speakers "$num_speakers"
-#     fi
-# else
-#     echo "++++++++ Skipping Stage 7: Continue training the model ++++++++"
-# fi
-
-# echo "++++++++ All stages completed ++++++++"
-
-# # Stage 1: Generate dataset
-# if [[ $run_stage =~ (^|[[:space:]])1($|[[:space:]]) ]]; then
-#     echo "++++++++ Stage 1: Generate metadata for the dataset ++++++++"
-#     if [[ "$use_gpu" == "true" ]]; then
-#         python ${SCRIPT_DIR}/local/audio_diarization.py --input_dir "$audio_dir" --workspace "$workspace" --num_speakers "$num_speakers" --gpu "$gpus" --use_gpu
-#     else
-#         python ${SCRIPT_DIR}/local/audio_diarization.py --input_dir "$audio_dir" --workspace "$workspace" --num_speakers "$num_speakers"
-#     fi
-    
-#     # 执行语音识别
-#     # 修改metadata.csv文件，填充transcription列（注意transcription列可以放到audio_diarization.py中创建）
-#     # python ${SCRIPT_DIR}/local/语音识别.py --input_dir "$audio_dir" --workspace "$workspace"
-
-#     # 将在workspace目录下构建dataset文件夹
-#     # 构建得到的workspace/dataset文件夹格式应如
-#     # - workspace/dataset
-#     #    - dataset  
-#     #      - audio
-#     #         - 1.wav
-#     #         - 2.wav
-#     #         - ...
-#     #      - audio_source
-#     #      - metadata.csv
-#     # metadata.csv包含了音频文件的路径和对应的说话人标签
-# else
-#     echo "++++++++ Skipping Stage 1: Generate metadata for the dataset ++++++++"
-# fi
-
-# # Stage 2: Perform VAD on each audio file
-# if [[ $run_stage =~ (^|[[:space:]])2($|[[:space:]]) ]]; then
-#     echo "++++++++ Stage 2: Perform VAD on each audio file ++++++++"
-#     if [[ "$use_gpu" == "true" ]]; then
-#         torchrun --nproc_per_node=$proc_per_node ${SCRIPT_DIR}/local/voice_activity_detection.py --workspace ${workspace} --gpu $gpus --use_gpu
-#     else
-#         torchrun --nproc_per_node=$proc_per_node ${SCRIPT_DIR}/local/voice_activity_detection.py --workspace ${workspace}
-#     fi
-# else
-#     echo "++++++++ Skipping Stage 2: Perform VAD on each audio file ++++++++"
-# fi
-
-# # Stage 3: Extract speaker embeddings
-# if [[ $run_stage =~ (^|[[:space:]])3($|[[:space:]]) ]]; then
-#     echo "++++++++ Stage 3: Extract speaker embeddings ++++++++"
-#     torchrun --nproc_per_node=$proc_per_node ${SCRIPT_DIR}/local/prepare_subseg_json.py --workspace ${workspace} --dur 1.0 --shift 0.5 --min_seg_len 0.5 --max_seg_num 150
-#     speaker_model_id="iic/speech_campplus_sv_zh_en_16k-common_advanced" # 预训练声纹提取模型
-#     if [[ "$use_gpu" == "true" ]]; then
-#         torchrun --nproc_per_node=$proc_per_node ${SCRIPT_DIR}/local/extract_diar_embeddings.py --workspace ${workspace} --model_id $speaker_model_id --conf $conf_file --batchsize 64 --gpu $gpus --use_gpu
-#     else
-#         torchrun --nproc_per_node=$proc_per_node ${SCRIPT_DIR}/local/extract_diar_embeddings.py --workspace ${workspace} --model_id $speaker_model_id --conf $conf_file --batchsize 64
-#     fi
-# else
-#     echo "++++++++ Skipping Stage 3: Extract speaker embeddings ++++++++"
-# fi
-
-# # Stage 4: Cluster embeddings
-# if [[ $run_stage =~ (^|[[:space:]])4($|[[:space:]]) ]]; then
-#     echo "++++++++ Stage 4: Cluster embeddings ++++++++"
-#     python ${SCRIPT_DIR}/local/cluster_and_postprocess.py --workspace ${workspace} --conf $conf_file 
-# else
-#     echo "++++++++ Skipping Stage 4: Cluster embeddings ++++++++"
-# fi
-
-# # TODO: Need to add the evaluation stage
-# # Stage 5: Evaluate and generate results
-# # if [[ $run_stage =~ (^|[[:space:]])5($|[[:space:]]) ]]; then
-# #     echo "++++++++ Stage 5: Evaluate and generate results ++++++++"
-# #     python ${SCRIPT_DIR}/local/evaluate_cluster_result.py --workspace ${workspace}
-# # else
-# #     echo "++++++++ Skipping Stage 5: Evaluate and generate results ++++++++"
-# # fi
-
-# echo "++++++++ All stages completed ++++++++"
-# echo "Speaker clustering completed."
-# echo "results can be found in ${workspace}/results"

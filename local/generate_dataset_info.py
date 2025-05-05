@@ -94,6 +94,7 @@ def main():
     # 设置日志记录器
     setup_logger(args.workspace)
     
+    logging.info(f"======== DATASET INFO GENERATION ========")
     logging.info(f"[INFO] 开始生成数据集统计信息...")
     
     dataset_dir = os.path.join(args.workspace, "dataset")
@@ -198,6 +199,7 @@ def main():
     logging.info(f"[INFO] 负样本总时长: {neg_all_stats['total_duration']}秒，共{neg_all_stats['total_files']}个文件")
     logging.info(f"[INFO] 正负样本比例: {dataset_info['dataset_ratio']['positive_negative_ratio']}")
     logging.info(f"[INFO] 数据集统计信息生成完成！")
+    logging.info(f"========================================")
 
 if __name__ == "__main__":
     main()

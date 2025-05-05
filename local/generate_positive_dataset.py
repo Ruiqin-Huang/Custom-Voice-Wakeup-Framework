@@ -201,6 +201,7 @@ def main():
     # 设置日志记录器
     logger = setup_logger(args.workspace)
     
+    logging.info(f"======== POSITIVE DATASET GENERATION ========")
     logging.info(f"[INFO] 开始生成正样本数据集")
     logging.info(f"[INFO] 唤醒词: {args.wakeword}")
     logging.info(f"[INFO] 源数据集目录: {args.pos_source_dir}")
@@ -241,6 +242,7 @@ def main():
         save_jsonl(test_processed, os.path.join(positive_dir, "pos_test.jsonl"))
         
         logging.info(f"[INFO] 正样本数据集生成完成！正样本数据集保存于目录: {positive_dir}")
+        logging.info(f"====================================")
         
     except Exception as e:
         logging.error(f"[ERROR] 生成正样本数据集时发生错误: {e}")
