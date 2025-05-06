@@ -111,12 +111,12 @@ def evaluate_on_dev(model, dataloader, device, LogMelFeature, criterion, epoch, 
             inputs_logmel = LogMelFeature(inputs) # 提取音频特征
             
             # 前向传播
-            outputs = model(inputs).squeeze()
+            outputs = model(inputs_logmel).squeeze()
             loss = criterion(outputs, labels)
             
             # 统计
             total_loss += loss.item()
-            preds = (torch.sigmoid(outputs) > 0.5).float()
+            preds = (torch.sigmoid(outputs) > 0.95).float()
             
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
@@ -180,7 +180,7 @@ def train(args):
     
     # 设置设备
     device = torch.device(f"cuda:{args.gpu}" if args.use_gpu and torch.cuda.is_available() else "cpu")
-    logger.info(f"Using device: {device}")
+    logger.info(f"[INFO] Using device: {device}")
     
     # 加载数据集信息
     logger.info("======== Dataset Loading ========")
@@ -195,9 +195,9 @@ def train(args):
     window_size = int(pos_avg_duration * 16000)  # 转为采样点数
     window_stride = int(window_size * args.window_stride_ratio) # 单位为采样点数
     
-    logger.info(f"Positive average duration: {pos_avg_duration:.4f}s")
-    logger.info(f"Window size: {window_size} samples ({window_size/16000:.4f}s)")
-    logger.info(f"Window stride: {window_stride} samples ({window_stride/16000:.4f}s)")
+    logger.info(f"[INFO] Positive average duration: {pos_avg_duration:.4f}s")
+    logger.info(f"[INFO] Window size: {window_size} samples ({window_size/16000:.4f}s)")
+    logger.info(f"[INFO] Window stride: {window_stride} samples ({window_stride/16000:.4f}s)")
 
     # 加载训练用数据集
     sample_rate = 16000
@@ -226,15 +226,15 @@ def train(args):
     )
     
     # check dataset size
-    logger.info(f"Train dataset count(After delploy sliding window on neg dataset)")
-    logger.info(f"Train samples count: {len(train_dataset)}")
-    logger.info(f"Dev samples count: {len(dev_dataset)}")
+    logger.info(f"[INFO] Train dataset count(After delploy sliding window on neg dataset)")
+    logger.info(f"[INFO] Train samples count: {len(train_dataset)}")
+    logger.info(f"[INFO] Dev samples count: {len(dev_dataset)}")
     logger.info(f"========================================")
     
     # 初始化模型
     logger.info(f"======== Training Preparation ========")
     model = WakeWordDetector(model_version=args.model_version, spec_group_num = args.spec_group_num).to(device)
-    logger.info(f"Initialized bcresnet with version {args.model_version}")
+    logger.info(f"[INFO] Initialized bcresnet with version {args.model_version}")
     
     # 定义损失函数和优化器
     criterion = nn.BCEWithLogitsLoss()
@@ -286,7 +286,7 @@ def train(args):
     # outputs = self.model(inputs) # 得到模型输出，这里的输出是一个 batch 的预测结果，形状是[batch_size, num_classes]
     
     # 打印训练参数及训练配置
-    logger.info(f"Training parameters: ")
+    logger.info(f"[INFO] Training parameters: ")
     logger.info(f"++++++++ workspace settings ++++++++")
     logger.info(f"  - Workspace: {args.workspace}")
     logger.info(f"++++++++ model settings +++++++++")
@@ -373,7 +373,7 @@ def train(args):
                 
                 # 统计在当前训练批次上的损失和准确率（使用固定阈值0.5）
                 epoch_loss += loss.item()
-                preds = (torch.sigmoid(outputs) > 0.5).float()
+                preds = (torch.sigmoid(outputs) > 0.95).float()
                 correct = (preds == labels).sum().item()
                 epoch_correct += correct
                 epoch_total += len(labels)
@@ -392,7 +392,7 @@ def train(args):
             train_acc = epoch_correct / epoch_total # 当前epoch的平均准确率（每个epoch都会遍历所有训练数据）
             
             # 记录日志
-            logger.info(f"Epoch {epoch+1}/{args.total_epochs} - Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f}")
+            logger.info(f"[INFO] Epoch {epoch+1}/{args.total_epochs} - Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f}")
             
             # 在dev集上评估（每eval_on_dev_epoch_stride步评估一次，最后一个epoch再评估一次）
             if (epoch + 1) % args.eval_on_dev_epoch_stride == 0 or epoch == args.total_epochs - 1:
@@ -404,7 +404,7 @@ def train(args):
                 all_dev_errors.extend(dev_errors)
                 
                 # 记录日志
-                logger.info(f"Epoch {dev_metrics['epoch']} : Evaluate on Dev - Loss: {dev_metrics['loss']:.4f}, Acc: {dev_metrics['accuracy']:.4f}, " + 
+                logger.info(f"[INFO] Epoch {dev_metrics['epoch']} : Evaluate on Dev - Loss: {dev_metrics['loss']:.4f}, Acc: {dev_metrics['accuracy']:.4f}, " + 
                            f"Prec: {dev_metrics['precision']:.4f}, Rec: {dev_metrics['recall']:.4f}, F1: {dev_metrics['f1']:.4f}")
                 
                 # 保存当前模型
@@ -432,7 +432,7 @@ def train(args):
                         'window_stride': window_stride,
                         'metrics': dev_metrics
                     }, best_model_path)
-                    logger.info(f"New best model saved! F1: {best_metrics['f1']:.4f}")
+                    logger.info(f"[INFO] New best model saved! F1: {best_metrics['f1']:.4f}")
     
     # 保存开发集错误记录
     dev_errors_path = os.path.join(train_dir, "dev_errors.json")
@@ -440,13 +440,13 @@ def train(args):
         json.dump(all_dev_errors, f, indent=2)
     
     # 训练完成日志
-    logger.info("Training completed!")
-    logger.info(f"Best model (epoch {best_metrics['epoch']}):")
+    logger.info("[INFO] Training completed!")
+    logger.info(f"[INFO] Best model (epoch {best_metrics['epoch']}):")
     logger.info(f"  Accuracy: {best_metrics['accuracy']:.4f}")
     logger.info(f"  Precision: {best_metrics['precision']:.4f}")
     logger.info(f"  Recall: {best_metrics['recall']:.4f}")
     logger.info(f"  F1: {best_metrics['f1']:.4f}")
-    logger.info(f"Development errors saved to {dev_errors_path}")
+    logger.info(f"[INFO] Development errors saved to {dev_errors_path}")
     logger.info(f"====================================")
 
 def parse_args():

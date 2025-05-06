@@ -89,7 +89,7 @@ class WakeWordDataset(Dataset):
                 
                 self.samples.append({
                     'type': 'negative',
-                    'filename': f"{sample['filename'].split('.')[0]}_{start_idx/self.sr:.2f}_{end_idx/self.sr:.2f}.{sample['filename'].split('.')[-1]}", # 命名格式：源文件名_起始时间点_结束时间点
+                    'filename': sample['filename'],
                     'text': sample['text'],
                     'label': 0, # 1 means contains wakeword, 0 means not
                     'start_idx': start_idx, # 单位：采样点

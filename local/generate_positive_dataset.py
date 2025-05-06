@@ -77,15 +77,15 @@ def prepare_directories(workspace):
     return positive_dir, audio_dir
 
 def load_data(source_dir, split):
-    """加载数据集CSV文件"""
-    csv_path = os.path.join(source_dir, f"{split}.csv")
+    """加载数据集TSV文件"""
+    tsv_path = os.path.join(source_dir, f"{split}.tsv")
     try:
-        return pd.read_csv(csv_path)
+        return pd.read_csv(tsv_path, sep="\t")
     except FileNotFoundError:
-        logging.error(f"[ERROR] 找不到文件: {csv_path}")
+        logging.error(f"[ERROR] 找不到文件: {tsv_path}")
         raise
     except Exception as e:
-        logging.error(f"[ERROR] 加载CSV文件时出错: {e}")
+        logging.error(f"[ERROR] 加载TSV文件时出错: {e}")
         raise
 
 def filter_samples_with_wakeword(df, wakeword):

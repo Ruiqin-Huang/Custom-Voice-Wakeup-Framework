@@ -1,42 +1,44 @@
 #!/bin/bash
 set -e
-. ./path.sh || exit 1 # source path.sh
+# . ./path.sh || exit 1 # source path.sh
 
 # Usage: 
 # ./run_audio_diarization-cluster.sh --help to see the help message
 
 # 定义默认值
 # ======== 自定义唤醒词 ========
-DEFAULT_WAKEWORD="wakeword" # 唤醒词
+DEFAULT_WAKEWORD="hey fire fox" # 唤醒词
 # ======== 数据集设置 ========
-DEFAULT_NEG_SOURCE_DIR="/path/to/negative/source" # 负样本数据集路径
-DEFAULT_POS_SOURCE_DIR="/path/to/positive/source" # 正样本数据集路径
-DEFAULT_NEGATIVE_TRAIN_DURATION=1000 # 负样本训练集时长（秒）
-DEFAULT_NEGATIVE_DEV_DURATION=100 # 负样本验证集时长（秒）
-DEFAULT_NEGATIVE_TEST_DURATION=100 # 负样本测试集时长（秒）
+DEFAULT_NEG_SOURCE_DIR="/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/datasets/Common_Voice/en/Common_Voice_corpus_4_en_sampled_22500-5000-5000" # 负样本数据集路径
+DEFAULT_POS_SOURCE_DIR="/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/datasets/Hey-Fire-Fox/hey-ff-data-in-mcv-format" # 正样本数据集路径
+DEFAULT_NEGATIVE_TRAIN_DURATION=10000 # 负样本训练集时长（秒）
+DEFAULT_NEGATIVE_DEV_DURATION=2000 # 负样本验证集时长（秒）
+DEFAULT_NEGATIVE_TEST_DURATION=2000 # 负样本测试集时长（秒）
 DEFAULT_POSITIVE_TRAIN_DURATION=1000 # 正样本训练集时长（秒）
-DEFAULT_POSITIVE_DEV_DURATION=100 # 正样本验证集时长（秒）
-DEFAULT_POSITIVE_TEST_DURATION=100 # 正样本测试集时长（秒）
+DEFAULT_POSITIVE_DEV_DURATION=200 # 正样本验证集时长（秒）
+DEFAULT_POSITIVE_TEST_DURATION=200 # 正样本测试集时长（秒）
 # ======== 模型设置 ========
 DEFAULT_MODEL_VERSION="1.5" # 模型版本
 DEFAULT_SPEC_GROUP_NUM=5 # 频谱组数
 # ======== 训练设置 ========
-DEFAULT_BATCH_SIZE=32 # 批大小
+DEFAULT_BATCH_SIZE=64 # 批大小
 DEFAULT_WINDOW_STRIDE_RATIO=0.5 # 窗口步幅比率
-DEFAULT_TOTAL_EPOCHS=100 # 总训练轮数
+DEFAULT_TOTAL_EPOCHS=200 # 总训练轮数
 DEFAULT_WARMUP_EPOCH=10 # 预热轮数
-DEFAULT_EVAL_ON_DEV_EPOCH_STRIDE=5 # 验证集评估轮数步幅
-DEFAULT_INIT_LR=0.001 # 初始学习率
-DEFAULT_LR_LOWER_LIMIT=1e-6 # 学习率下限
-DEFAULT_WEIGHT_DECAY=0.0001 # 权重衰减
+DEFAULT_EVAL_ON_DEV_EPOCH_STRIDE=10 # 验证集评估轮数步幅
+DEFAULT_INIT_LR=1e-1 # 初始学习率
+DEFAULT_LR_LOWER_LIMIT=0 # 学习率下限
+DEFAULT_WEIGHT_DECAY=1e-3 # 权重衰减
 DEFAULT_MOMENTUM=0.9 # 动量
 # ======== 推理设置 ========
 # TODO: 需要添加推理阶段的参数设置
 # ======== 工作区设置 ========
-DEFAULT_WORKSPACE="./workspace" # 工作目录
+DEFAULT_WORKSPACE="./workspace/hff-testrun-1-20250506" # 工作目录
 # ======== 设备设置 ========
-DEFAULT_USE_GPU="false" # 是否使用GPU
+DEFAULT_USE_GPU="true" # 是否使用GPU
 DEFAULT_GPUS="0" # GPU设备ID,目前仅支持单GPU训练
+# ======== 实验设置 ========
+DEFAULT_RUN_STAGE="4" # 指定要执行的阶段 (1-5)，用空格分隔
 
 # 帮助函数
 # show_usage() {
@@ -85,6 +87,8 @@ workspace="$DEFAULT_WORKSPACE" # 工作目录
 # ======== 设备设置 ========
 use_gpu="$DEFAULT_USE_GPU" # 是否使用GPU
 gpu="$DEFAULT_GPUS" # GPU设备ID,目前仅支持单GPU训练
+# ======== 实验设置 ========
+run_stage="$DEFAULT_RUN_STAGE" # 指定要执行的阶段 (1-5)，用空格分隔
 
 
 # 解析命令行参数
@@ -147,7 +151,8 @@ echo "  use_gpu: $use_gpu"
 echo "  gpu: $gpu"
 # TODO: 多GPU分布式训练
 # echo "  proc_per_node: $proc_per_node"
-# echo "  run_stage: $run_stage"
+echo "========实验设置========"
+echo "  run_stage: $run_stage"
 
 
 # 在切换目录【前】保存原始脚本目录的绝对路径
