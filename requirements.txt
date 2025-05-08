@@ -1,6 +1,8 @@
+# pip
 librosa
 pandas
 
+# conda
 conda create -n bcresnet python=3.6
 conda activate bcresnet
 conda install pytorch==1.7.1 torchvision==0.8.2 torchaudio==0.7.2 -c pytorch

@@ -71,21 +71,33 @@ def calculate_stats(data):
             "total_files": 0,
             "avg_duration": 0,
             "min_duration": 0,
-            "max_duration": 0
+            "max_duration": 0,
+            "percentile_80": 0,
+            "percentile_90": 0
         }
     
-    total_duration = sum(item["duration"] for item in data)
+    durations = [item["duration"] for item in data]
+    total_duration = sum(durations)
     total_files = len(data)
     avg_duration = total_duration / total_files if total_files > 0 else 0
-    min_duration = min(item["duration"] for item in data) if total_files > 0 else 0
-    max_duration = max(item["duration"] for item in data) if total_files > 0 else 0
+    min_duration = min(durations) if total_files > 0 else 0
+    max_duration = max(durations) if total_files > 0 else 0
+    
+    # 计算80%和90%百分位数
+    sorted_durations = sorted(durations)
+    index_80 = int(len(sorted_durations) * 0.8)
+    index_90 = int(len(sorted_durations) * 0.9)
+    percentile_80 = sorted_durations[index_80] if total_files > 0 else 0
+    percentile_90 = sorted_durations[index_90] if total_files > 0 else 0
     
     return {
         "total_duration": round(total_duration, 2),
         "total_files": total_files,
         "avg_duration": round(avg_duration, 2),
         "min_duration": round(min_duration, 2),
-        "max_duration": round(max_duration, 2)
+        "max_duration": round(max_duration, 2),
+        "percentile_80": round(percentile_80, 2),
+        "percentile_90": round(percentile_90, 2)
     }
 
 def main():
@@ -152,7 +164,9 @@ def main():
                 "total_files": pos_train_stats["total_files"],
                 "avg_duration": pos_train_stats["avg_duration"],
                 "min_duration": pos_train_stats["min_duration"],
-                "max_duration": pos_train_stats["max_duration"]
+                "max_duration": pos_train_stats["max_duration"],
+                "percentile_80_duration": pos_train_stats["percentile_80"],
+                "percentile_90_duration": pos_train_stats["percentile_90"]
             },
             "dev": {
                 "total_duration": pos_dev_stats["total_duration"],
@@ -197,7 +211,8 @@ def main():
     
     logging.info(f"[INFO] 正样本总时长: {pos_all_stats['total_duration']}秒，共{pos_all_stats['total_files']}个文件")
     logging.info(f"[INFO] 负样本总时长: {neg_all_stats['total_duration']}秒，共{neg_all_stats['total_files']}个文件")
-    logging.info(f"[INFO] 正负样本比例: {dataset_info['dataset_ratio']['positive_negative_ratio']}")
+    logging.info(f"[INFO] 正样本训练集总时长: {pos_train_stats['total_duration']}秒，平均时长: {pos_train_stats['avg_duration']}秒，最小时长: {pos_train_stats['min_duration']}秒，最大时长: {pos_train_stats['max_duration']}秒，80%时长: {pos_train_stats['percentile_80']}秒，90%时长: {pos_train_stats['percentile_90']}秒")
+    logging.info(f"[INFO] 正负样本比例（滑动窗口处理前）: {dataset_info['dataset_ratio']['positive_negative_ratio']}")
     logging.info(f"[INFO] 数据集统计信息生成完成！")
     logging.info(f"========================================")
 

@@ -110,14 +110,27 @@ class WakeWordDataset(Dataset):
             # 加载正样本
             audio_path = os.path.join(self.pos_audio_dir, sample['filename'])
             audio, _ = librosa.load(audio_path, sr=self.sr)
-            
+    
             # 截断或零填充至窗口大小
+            # 训练时随机化提高泛化能力，验证/测试时使用确定性方法保证一致性。
             if len(audio) > self.window_size:
-                audio = audio[:self.window_size]
+                if self.split == 'train':  # 训练时做数据增强
+                    # 随机选择起始点进行截断(但是会确保至少截断为window_size的长度)
+                    start = np.random.randint(0, len(audio) - self.window_size + 1)
+                    audio = audio[start:start + self.window_size]
+                else:  # 验证/测试时居中截断
+                    start = (len(audio) - self.window_size) // 2
+                    audio = audio[start:start + self.window_size]
             elif len(audio) < self.window_size:
-                # 若正样本音频长度不足window_size，在音频尾部添加零填充，直至长度等于窗口大小
-                padding = np.zeros(self.window_size - len(audio))
-                audio = np.concatenate([audio, padding]) 
+                if self.split == 'train':  # 训练时做数据增强
+                    # 随机决定左右两侧的填充量
+                    padding_left = np.random.randint(0, self.window_size - len(audio) + 1)
+                    padding_right = self.window_size - len(audio) - padding_left
+                    audio = np.pad(audio, (padding_left, padding_right), 'constant')
+                else:  # 验证/测试时居中填充
+                    padding_left = (self.window_size - len(audio)) // 2
+                    padding_right = self.window_size - len(audio) - padding_left
+                    audio = np.pad(audio, (padding_left, padding_right), 'constant') 
         else:
             # 加载负样本切片
             audio_path = os.path.join(self.neg_audio_dir, sample['filename'])

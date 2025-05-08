@@ -11,23 +11,23 @@ DEFAULT_WAKEWORD="hey fire fox" # 唤醒词
 # ======== 数据集设置 ========
 DEFAULT_NEG_SOURCE_DIR="/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/datasets/Common_Voice/en/Common_Voice_corpus_4_en_sampled_22500-5000-5000" # 负样本数据集路径
 DEFAULT_POS_SOURCE_DIR="/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/datasets/Hey-Fire-Fox/hey-ff-data-in-mcv-format" # 正样本数据集路径
-DEFAULT_NEGATIVE_TRAIN_DURATION=10000 # 负样本训练集时长（秒）
-DEFAULT_NEGATIVE_DEV_DURATION=2000 # 负样本验证集时长（秒）
-DEFAULT_NEGATIVE_TEST_DURATION=2000 # 负样本测试集时长（秒）
+DEFAULT_NEGATIVE_TRAIN_DURATION=20000 # 负样本训练集时长（秒）
+DEFAULT_NEGATIVE_DEV_DURATION=4000 # 负样本验证集时长（秒）
+DEFAULT_NEGATIVE_TEST_DURATION=4000 # 负样本测试集时长（秒）
 DEFAULT_POSITIVE_TRAIN_DURATION=1000 # 正样本训练集时长（秒）
 DEFAULT_POSITIVE_DEV_DURATION=200 # 正样本验证集时长（秒）
 DEFAULT_POSITIVE_TEST_DURATION=200 # 正样本测试集时长（秒）
 # ======== 模型设置 ========
-DEFAULT_MODEL_VERSION="1.5" # 模型版本
+DEFAULT_MODEL_VERSION=3 # 模型版本
 DEFAULT_SPEC_GROUP_NUM=5 # 频谱组数
 # ======== 训练设置 ========
 DEFAULT_BATCH_SIZE=64 # 批大小
-DEFAULT_WINDOW_STRIDE_RATIO=0.5 # 窗口步幅比率
+DEFAULT_WINDOW_STRIDE_RATIO=0.1 # 窗口步幅比率
 DEFAULT_TOTAL_EPOCHS=200 # 总训练轮数
 DEFAULT_WARMUP_EPOCH=10 # 预热轮数
 DEFAULT_EVAL_ON_DEV_EPOCH_STRIDE=10 # 验证集评估轮数步幅
 DEFAULT_INIT_LR=1e-1 # 初始学习率
-DEFAULT_LR_LOWER_LIMIT=0 # 学习率下限
+DEFAULT_LR_LOWER_LIMIT=1e-6 # 学习率下限
 DEFAULT_WEIGHT_DECAY=1e-3 # 权重衰减
 DEFAULT_MOMENTUM=0.9 # 动量
 # ======== 推理设置 ========
@@ -36,9 +36,9 @@ DEFAULT_MOMENTUM=0.9 # 动量
 DEFAULT_WORKSPACE="./workspace/hff-testrun-1-20250506" # 工作目录
 # ======== 设备设置 ========
 DEFAULT_USE_GPU="true" # 是否使用GPU
-DEFAULT_GPUS="0" # GPU设备ID,目前仅支持单GPU训练
+DEFAULT_GPUS="1" # GPU设备ID,目前仅支持单GPU训练
 # ======== 实验设置 ========
-DEFAULT_RUN_STAGE="4" # 指定要执行的阶段 (1-5)，用空格分隔
+DEFAULT_RUN_STAGE="1 2 3 4" # 指定要执行的阶段 (1-5)，用空格分隔
 
 # 帮助函数
 # show_usage() {

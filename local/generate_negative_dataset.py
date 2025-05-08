@@ -149,9 +149,9 @@ def process_audio_files(sampled_files, mcv_dir, audio_dir, wakeword):
     clips_dir = os.path.join(mcv_dir, "clips")
     processed_files = []
     
-    logging.info(f"[INFO] 开始处理 {len(sampled_files)} 个音频文件")
+    logging.info(f"[INFO] 将 {len(sampled_files)} 个音频文件转换为16kHz采样率的WAV格式")
     
-    for file_info in tqdm(sampled_files, desc="处理音频文件"):
+    for file_info in tqdm(sampled_files, desc="音频文件重采样"):
         audio_path = os.path.join(clips_dir, file_info["path"])
         
         # 获取文件名（不含扩展名）并创建WAV文件路径
@@ -160,7 +160,7 @@ def process_audio_files(sampled_files, mcv_dir, audio_dir, wakeword):
         wav_path = os.path.join(audio_dir, wav_filename)
         
         try:
-            # 加载MP3并以16kHz采样率重新采样
+            # 加载音频文件并以16kHz采样率重新采样
             y, sr = librosa.load(audio_path, sr=None)
             y_resampled = librosa.resample(y, orig_sr=sr, target_sr=16000) if sr != 16000 else y
             

@@ -116,7 +116,7 @@ def evaluate_on_dev(model, dataloader, device, LogMelFeature, criterion, epoch, 
             
             # 统计
             total_loss += loss.item()
-            preds = (torch.sigmoid(outputs) > 0.95).float()
+            preds = (torch.sigmoid(outputs) > 0.55).float()
             
             all_preds.extend(preds.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
@@ -189,9 +189,9 @@ def train(args):
         dataset_info = json.load(f)
     
     # 设置窗口大小和步长（单位为采样点数，音频在generate_dataset步骤中被重采样为16000hz，故转换时乘以16000）
-    # 窗口大小 = 正集的训练集的avg_duration
-    # 窗口步长 = 正集的训练集的avg_duration * 步长比例
-    pos_avg_duration = dataset_info["positive"]["train"]["avg_duration"]
+    # 窗口大小 = 正集的训练集的percentile_90_duration，能将正集的90%样本包含在窗口内
+    # 窗口步长 = 窗口大小 * 步长比例
+    pos_avg_duration = dataset_info["positive"]["train"]["percentile_90_duration"]
     window_size = int(pos_avg_duration * 16000)  # 转为采样点数
     window_stride = int(window_size * args.window_stride_ratio) # 单位为采样点数
     
@@ -213,7 +213,7 @@ def train(args):
         #     __getitem__(self, idx): 根据索引返回单个样本
         batch_size=args.batch_size, # 每个批次的样本数量
         shuffle=True, # 是否在每个epoch开始时打乱数据集（训练时通常设置为True，模型训练时正负样本交叉输入）
-        num_workers=4, # 用于并行加载数据的子进程数量，提高数据加载效率
+        num_workers=6, # 用于并行加载数据的子进程数量，提高数据加载效率
         pin_memory=args.use_gpu # 是否将数据放入CUDA固定内存，可加速GPU训练时的数据传输
     )
     
@@ -221,7 +221,7 @@ def train(args):
         dev_dataset,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=4,
+        num_workers=6,
         pin_memory=args.use_gpu
     )
     
@@ -373,7 +373,7 @@ def train(args):
                 
                 # 统计在当前训练批次上的损失和准确率（使用固定阈值0.5）
                 epoch_loss += loss.item()
-                preds = (torch.sigmoid(outputs) > 0.95).float()
+                preds = (torch.sigmoid(outputs) > 0.55).float()
                 correct = (preds == labels).sum().item()
                 epoch_correct += correct
                 epoch_total += len(labels)
@@ -383,7 +383,7 @@ def train(args):
                 pbar.set_postfix({
                     "epoch": f"{epoch+1}/{args.total_epochs}",
                     "loss": f"{loss.item():.4f}",
-                    "acc(threshold=0.5)": f"{correct/len(labels):.4f}",
+                    "acc(threshold=0.55)": f"{correct/len(labels):.4f}",
                     "lr": f"{lr:.6f}"
                 })
             
