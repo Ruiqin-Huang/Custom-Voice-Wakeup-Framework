@@ -21,8 +21,8 @@ DEFAULT_POSITIVE_TEST_DURATION=200 # 正样本测试集时长（秒）
 DEFAULT_MODEL_VERSION=3 # 模型版本
 DEFAULT_SPEC_GROUP_NUM=5 # 频谱组数
 # ======== 训练设置 ========
-DEFAULT_BATCH_SIZE=64 # 批大小
-DEFAULT_WINDOW_STRIDE_RATIO=0.1 # 窗口步幅比率
+DEFAULT_BATCH_SIZE=128 # 批大小
+DEFAULT_WINDOW_STRIDE_RATIO=0.25 # 窗口步幅比率
 DEFAULT_TOTAL_EPOCHS=200 # 总训练轮数
 DEFAULT_WARMUP_EPOCH=10 # 预热轮数
 DEFAULT_EVAL_ON_DEV_EPOCH_STRIDE=10 # 验证集评估轮数步幅
@@ -38,7 +38,7 @@ DEFAULT_WORKSPACE="./workspace/hff-testrun-1-20250506" # 工作目录
 DEFAULT_USE_GPU="true" # 是否使用GPU
 DEFAULT_GPUS="1" # GPU设备ID,目前仅支持单GPU训练
 # ======== 实验设置 ========
-DEFAULT_RUN_STAGE="1 2 3 4" # 指定要执行的阶段 (1-5)，用空格分隔
+DEFAULT_RUN_STAGE="4" # 指定要执行的阶段 (1-5)，用空格分隔
 
 # 帮助函数
 # show_usage() {
@@ -205,4 +205,17 @@ if [[ $run_stage =~ (^|[[:space:]])4($|[[:space:]]) ]]; then
     fi
 else
     echo "++++++++ Skipping Stage 4: Train the model ++++++++"
+fi
+
+# Stage 5: Eval on the test set
+# 在测试集上评估模型性能并生成结果报告
+if [[ $run_stage =~ (^|[[:space:]])5($|[[:space:]]) ]]; then
+    echo "++++++++ Stage 5: Eval on the test set ++++++++"
+    if [[ "$use_gpu" == "true" ]]; then
+        python ${SCRIPT_DIR}/local/eval_model.py --workspace "$workspace" --model_version "$model_version" --spec_group_num "$spec_group_num" --batch_size "$batch_size" --window_stride_ratio "$train_window_stride_ratio" --gpu "$gpu" --use_gpu
+    else
+        python ${SCRIPT_DIR}/local/eval_model.py --workspace "$workspace" --model_version "$model_version" --spec_group_num "$spec_group_num" --batch_size "$batch_size" --window_stride_ratio "$train_window_stride_ratio"
+    fi
+else
+    echo "++++++++ Skipping Stage 5: Eval on the test set ++++++++"
 fi

@@ -29,6 +29,7 @@ class WakeWordDataset(Dataset):
         # 数据路径
         self.pos_audio_dir = os.path.join(workspace, "dataset", "positive", "audio")
         self.neg_audio_dir = os.path.join(workspace, "dataset", "negative", "audio")
+        self.noise_audio_dir = os.path.join(workspace, "dataset", "noise", "audio")
         
         # 加载JSONL文件
         pos_jsonl_path = os.path.join(workspace, "dataset", "positive", f"pos_{split}.jsonl")
@@ -55,18 +56,73 @@ class WakeWordDataset(Dataset):
         处理正样本和负样本，为负样本生成滑动窗口索引
         
         对于所有正样本，一个正样本音频文件直接作为一个正样本（考虑到每个正样本音频文件只包含唤醒词本身）
+        除了将该个正样本音频文件直接作为一个正样本，应用数据增强，包括：随机时间拉伸（单独应用1次，最多±20％，＋pitch修正）
+        时间偏移（单独应用1次，最多±10％），噪声混合（随机取噪声目录中1段噪声音频.wav，选择正样本中的一个随机片段进行叠加混合（不是直接替换，是叠加混合），随机取两个噪音文件分别应用一次噪声增强）
+        SpecAugment（1次），这样相当于原一条正样本被扩增为1+1+1+2+1=6条正样本
+        
         对于所有负样本，应用滑动窗口技术，将长音频切分为多个小片段作为多个负样本
         """
         self.samples = []
         
         # 处理正样本 - 每个音频文件作为一个样本
         for sample in self.pos_samples:
+            # 样本中的duration只记录原始音频的持续时间，不考虑增强后音频的持续时间
+            # 1. 原始样本
             self.samples.append({
                 'type': 'positive',
                 'filename': sample['filename'],
                 'text': sample['text'],
                 'label': 1, # 1 means contains wakeword, 0 means not
-                'duration': sample['duration'] # 单位：秒
+                'duration': sample['duration'], # 单位：秒
+                'augmentation': 'none'  # 标记为原始样本，不做增强
+            })
+            
+            # 2. 随机时间拉伸增强 (±20%)
+            self.samples.append({
+                'type': 'positive',
+                'filename': sample['filename'],
+                'text': sample['text'],
+                'label': 1,
+                'duration': sample['duration'],
+                'augmentation': 'time_stretch',
+            })
+            
+            # 3. 时间偏移增强 (±10%)
+            self.samples.append({
+                'type': 'positive',
+                'filename': sample['filename'],
+                'text': sample['text'],
+                'label': 1,
+                'duration': sample['duration'],
+                'augmentation': 'time_shift',
+            })
+            
+            # 4-5. 噪声混合增强 (应用两次，每次随机选用不同噪声文件和SNR进行混合)
+            self.samples.append({
+                'type': 'positive',
+                'filename': sample['filename'],
+                'text': sample['text'],
+                'label': 1,
+                'duration': sample['duration'],
+                'augmentation': 'noise_mix_0',
+            })
+            self.samples.append({
+                'type': 'positive',
+                'filename': sample['filename'],
+                'text': sample['text'],
+                'label': 1,
+                'duration': sample['duration'],
+                'augmentation': 'noise_mix_1',
+            })
+            
+            # 6. SpecAugment增强
+            self.samples.append({
+                'type': 'positive',
+                'filename': sample['filename'],
+                'text': sample['text'],
+                'label': 1,
+                'duration': sample['duration'],
+                'augmentation': 'specaugment'
             })
         
         # 处理负样本 - 应用滑动窗口
@@ -110,6 +166,119 @@ class WakeWordDataset(Dataset):
             # 加载正样本
             audio_path = os.path.join(self.pos_audio_dir, sample['filename'])
             audio, _ = librosa.load(audio_path, sr=self.sr)
+    
+            # 进行数据增强：随机拉伸+随机偏移+噪声混合（2次）+SpecAugment
+            if sample['augmentation'] == 'time_stretch':
+                # 随机时间拉伸 (±20%)
+                stretch_factor = np.random.uniform(0.8, 1.2)  # ±20%范围内的随机因子
+                audio = librosa.effects.time_stretch(audio, rate=stretch_factor)
+            elif sample['augmentation'] == 'time_shift':
+                # 随机时间偏移 (±10%)
+                shift_factor = np.random.uniform(-0.1, 0.1)  # ±10%范围内的随机偏移
+                shift_samples = int(len(audio) * shift_factor)
+                if shift_samples > 0:
+                    # 音频内容向左移（丢弃音频开头）
+                    audio = np.pad(audio, (0, shift_samples), 'constant')[shift_samples:]
+                else:
+                    # 音频内容向右移（丢弃音频结尾）
+                    audio = np.pad(audio, (abs(shift_samples), 0), 'constant')[:-abs(shift_samples)]
+            elif sample['augmentation'].startswith('noise_mix'):
+                # 噪声混合增强
+                if not hasattr(self, 'noise_files') or not self.noise_files: # 检查以下两个条件之一是否满足：当前对象(self)没有noise_files属性；当前对象有noise_files属性，但该属性值为空或等价于False的值
+                    # 第一次调用时加载噪声文件列表
+                    self.noise_files = [f for f in os.listdir(self.noise_audio_dir) if f.endswith('.wav')]
+                
+                if self.noise_files:
+                    # 随机选择噪声文件
+                    noise_file = np.random.choice(self.noise_files)
+                    noise_path = os.path.join(self.noise_audio_dir, noise_file)
+                    noise, _ = librosa.load(noise_path, sr=self.sr)
+                    
+                    # 如果噪声文件长度不足，则循环填充.(目的是确保整段音频都被噪声覆盖)(更接近真实场景，背景噪声通常持续存在)
+                    if len(noise) < len(audio):
+                        repeats = len(audio) // len(noise) + 1
+                        noise = np.tile(noise, repeats)[:len(audio)]
+                    
+                    # 如果噪声文件太长，随机选择一段
+                    elif len(noise) > len(audio):
+                        start = np.random.randint(0, len(noise) - len(audio) + 1)
+                        noise = noise[start:start + len(audio)]
+                    
+                    # 随机设置信噪比SNR (dB)
+                    # 高SNR (如20dB)：信号明显强于噪声，听感清晰
+                    # 低SNR (如5dB)：噪声影响较大，听感模糊但仍可辨别
+                    # 0dB以下：噪声覆盖信号，几乎无法辨别原始内容
+                        # 5dB：相当于嘈杂的公共场所，但语音仍可辨别
+                        # 20dB：类似于安静环境中的低背景噪声
+                    snr = np.random.uniform(5, 20)  # 5-20dB的信噪比范围
+                    
+                    # 计算信号和噪声功率
+                    signal_power = np.mean(audio ** 2)
+                    noise_power = np.mean(noise ** 2)
+                    
+                    # 根据SNR缩放噪声,确保了噪声被适当缩放，以达到期望的SNR水平
+                    scale = np.sqrt(signal_power / (noise_power * (10 ** (snr / 10))))
+                    scaled_noise = scale * noise
+                    
+                    # 叠加混合
+                    audio = audio + scaled_noise
+                    
+                    # 归一化，防止溢出,防止混合后的音频幅值溢出，避免数字失真
+                    max_abs_value = np.max(np.abs(audio))
+                    if max_abs_value > 1.0:
+                        audio = audio / max_abs_value
+                
+                        
+            elif sample['augmentation'] == 'specaugment':
+                # SpecAugment增强,SpecAugment 是一种专为语音识别任务设计的频谱图级别(spectrogram-level)的数据增强技术，
+                # 由 Google 在 2019 年提出。它直接在音频的频谱表示上进行操作，而不是在原始波形上，
+                # 可以有效提高模型对不同环境和说话方式的适应性。
+                # 将音频转换为梅尔频谱图
+                mel_spec = librosa.feature.melspectrogram(y=audio, sr=self.sr) # 将原始音频波形转换为梅尔频谱图
+                mel_spec_db = librosa.power_to_db(mel_spec) # 将功率谱转换为分贝(dB)尺度的表示
+                
+                # 时间掩码
+                # 随机选择时间轴上的一段区域（10%宽度）
+                # 将该区域设置为接近静音的值（-80dB）
+                # 这模拟了语音中某些时间片段被干扰或丢失的情况
+                time_mask_width = int(mel_spec.shape[1] * 0.1)  # 掩码宽度为时间轴的10%
+                if time_mask_width > 0:  # 确保掩码宽度大于0
+                    t0 = np.random.randint(0, mel_spec.shape[1] - time_mask_width + 1)
+                    mel_spec_db[:, t0:t0 + time_mask_width] = -80.0  # -80 dB相当于静音
+                
+                # 频率掩码
+                # 随机选择频率轴上的一段区域（10%高度）
+                # 将该区域设置为接近静音的值（-80dB）
+                # 这模拟了某些频率段被干扰或环境噪声遮盖的情况
+                freq_mask_height = int(mel_spec.shape[0] * 0.1)  # 掩码高度为频率轴的10%
+                if freq_mask_height > 0:  # 确保掩码高度大于0
+                    f0 = np.random.randint(0, mel_spec.shape[0] - freq_mask_height + 1)
+                    mel_spec_db[f0:f0 + freq_mask_height, :] = -80.0
+                
+                # 从梅尔频谱图重建音频
+                # 音频波形到梅尔频谱图再回到音频波形不是完全可逆的变换，这个过程确实会产生失真。这主要是因为：
+                # 信息损失的几个关键环节
+                # 1 相位信息丢失
+                # 在计算梅尔频谱时，只保留了幅度/功率信息，而丢弃了相位信息
+                # 在逆变换时需要通过Griffin-Lim等算法估计相位，这是一个近似过程
+                # 2 频率分辨率降低
+                # 梅尔滤波器组将线性频率尺度映射到知觉上更有意义的梅尔尺度
+                # 多个线性频率被合并到一个梅尔频带中，这是一种有损压缩
+                # 这种映射是不可逆的降维操作
+                mel_spec_masked = librosa.db_to_power(mel_spec_db)
+                # 使用迭代算法重建音频，结果取决于迭代次数和初始条件
+                audio = librosa.feature.inverse.mel_to_audio(
+                    mel_spec_masked, sr=self.sr, n_fft=2048, hop_length=512
+                )
+                
+                # 确保梅尔频谱转换回的音频和原始音频长度一致
+                if len(audio) > len(mel_spec[0]) * 512:
+                    # 若当前遍历得到的音频长度大于梅尔频谱图转换回的音频长度，则截断
+                    audio = audio[:len(mel_spec[0]) * 512]
+                elif len(audio) < len(mel_spec[0]) * 512:
+                    # 若当前遍历得到的音频长度小于梅尔频谱图转换回的音频长度，则尾部零填充
+                    audio = np.pad(audio, (0, len(mel_spec[0]) * 512 - len(audio)), 'constant')
+            
     
             # 截断或零填充至窗口大小
             # 训练时随机化提高泛化能力，验证/测试时使用确定性方法保证一致性。

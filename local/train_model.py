@@ -90,6 +90,35 @@ def setup_logger(workspace):
     
     return logger
 
+def calculate_eer(scores, labels):
+    # 设置多个阈值
+    thresholds = np.linspace(0, 1, 100)
+    fars = []
+    frrs = []
+    
+    for threshold in thresholds:
+        preds = (scores > threshold).astype(int)
+        
+        # 计算混淆矩阵元素
+        tp = np.sum((preds == 1) & (labels == 1))
+        fn = np.sum((preds == 0) & (labels == 1))
+        fp = np.sum((preds == 1) & (labels == 0))
+        tn = np.sum((preds == 0) & (labels == 0))
+        
+        # 计算FRR和FAR
+        frr = fn / (tp + fn) if (tp + fn) > 0 else 0
+        far = fp / (fp + tn) if (fp + tn) > 0 else 0
+        
+        fars.append(far)
+        frrs.append(frr)
+    
+    # 找到FAR和FRR最接近的点
+    abs_diffs = np.abs(np.array(fars) - np.array(frrs))
+    min_index = np.argmin(abs_diffs)
+    eer = (fars[min_index] + frrs[min_index]) / 2
+    
+    return eer, thresholds[min_index]
+
 # 评估函数
 def evaluate_on_dev(model, dataloader, device, LogMelFeature, criterion, epoch, calculate_errors=False):
     '''
@@ -141,6 +170,10 @@ def evaluate_on_dev(model, dataloader, device, LogMelFeature, criterion, epoch, 
     precision = tp / (tp + fp) if tp + fp > 0 else 0
     # 召回率：TP / (TP + FN)。在所有实际包含唤醒词的样本中，被正确预测为"有唤醒词"的比例
     recall = tp / (tp + fn) if tp + fn > 0 else 0
+    # FRR：False Rejection Rate，误拒绝率，FRR = FN / (TP + FN)，在所有包含唤醒词的正样本中，错误拒绝的比例
+    frr = fn / (tp + fn) if tp + fn > 0 else 0
+    # FAR：False Acceptance Rate，误接受率，FAR = FP / (TN + FP)，在所有不包含唤醒词的负样本中，错误接受的比例
+    far = fp / (tn + fp) if tn + fp > 0 else 0
     # F1分数：2 * (精确率 * 召回率) / (精确率 + 召回率)。综合考虑精确率和召回率的指标
     f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
     
@@ -236,8 +269,12 @@ def train(args):
     model = WakeWordDetector(model_version=args.model_version, spec_group_num = args.spec_group_num).to(device)
     logger.info(f"[INFO] Initialized bcresnet with version {args.model_version}")
     
-    # 定义损失函数和优化器
-    criterion = nn.BCEWithLogitsLoss()
+    # 定义损失函数
+    # 为正样本添加权重，值可以根据不平衡程度调整
+    # 由于实际训练时负样本为正样本的50~100倍，可以设置为100或接近的值
+    pos_weight = torch.tensor([50.0])  # 可以根据实际情况进行调整
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight).to(device) # 当你使用pos_weight参数时，这个损失函数会在内部保存这个权重张量。当模型和数据都在GPU（或其他特定设备）上时，损失函数内部的张量也需要在同一设备上，否则会导致计算错误。故需要to(device)将pos_weight转移到相同的设备上。
+    # 定义优化器
     optimizer = torch.optim.SGD(
         model.parameters(),
         lr=0,  # 初始化为0，在训练中动态调整

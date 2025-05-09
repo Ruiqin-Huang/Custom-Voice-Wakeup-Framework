@@ -1,9 +1,18 @@
-# pip
-librosa
-pandas
-
-# conda
+# for wakeword detection model
 conda create -n bcresnet python=3.6
 conda activate bcresnet
 conda install pytorch==1.7.1 torchvision==0.8.2 torchaudio==0.7.2 -c pytorch
 conda install tqdm requests -c conda-forge
+pip install -r wakeword_detection_model_requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host=mirrors.aliyun.com
+
+# for voice clone model
+conda create -n cosyvoice -y python=3.10 | conda create --prefix /home/hrq/miniconda3/envs/hrq-cosyvoice python=3.10
+conda activate cosyvoice | conda activate /home/hrq/miniconda3/envs/hrq-cosyvoice
+# pynini is required by WeTextProcessing, use conda to install it as it can be executed on all platform.
+conda install -y -c conda-forge pynini==2.1.5
+# 2. for voice clone model
+pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/ --trusted-host=mirrors.aliyun.com
+
+# If you encounter sox compatibility issues
+# ubuntu
+conda install sox
