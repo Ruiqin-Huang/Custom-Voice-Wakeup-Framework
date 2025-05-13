@@ -1,3 +1,4 @@
 # Exclude example and workspace directories
 /data/
 /workspace/
+/local/cosyvoice/

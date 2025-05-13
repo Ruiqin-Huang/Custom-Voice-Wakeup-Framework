@@ -77,53 +77,54 @@ class WakeWordDataset(Dataset):
                 'augmentation': 'none'  # 标记为原始样本，不做增强
             })
             
-            # 2. 随机时间拉伸增强 (±20%)
-            self.samples.append({
-                'type': 'positive',
-                'filename': sample['filename'],
-                'text': sample['text'],
-                'label': 1,
-                'duration': sample['duration'],
-                'augmentation': 'time_stretch',
-            })
-            
-            # 3. 时间偏移增强 (±10%)
-            self.samples.append({
-                'type': 'positive',
-                'filename': sample['filename'],
-                'text': sample['text'],
-                'label': 1,
-                'duration': sample['duration'],
-                'augmentation': 'time_shift',
-            })
-            
-            # 4-5. 噪声混合增强 (应用两次，每次随机选用不同噪声文件和SNR进行混合)
-            self.samples.append({
-                'type': 'positive',
-                'filename': sample['filename'],
-                'text': sample['text'],
-                'label': 1,
-                'duration': sample['duration'],
-                'augmentation': 'noise_mix_0',
-            })
-            self.samples.append({
-                'type': 'positive',
-                'filename': sample['filename'],
-                'text': sample['text'],
-                'label': 1,
-                'duration': sample['duration'],
-                'augmentation': 'noise_mix_1',
-            })
-            
-            # 6. SpecAugment增强
-            self.samples.append({
-                'type': 'positive',
-                'filename': sample['filename'],
-                'text': sample['text'],
-                'label': 1,
-                'duration': sample['duration'],
-                'augmentation': 'specaugment'
-            })
+            if self.split == 'train': # 仅对训练集正样本进行数据增强
+                # 2. 随机时间拉伸增强 (±20%)
+                self.samples.append({
+                    'type': 'positive',
+                    'filename': sample['filename'],
+                    'text': sample['text'],
+                    'label': 1,
+                    'duration': sample['duration'],
+                    'augmentation': 'time_stretch',
+                })
+                
+                # 3. 时间偏移增强 (±10%)
+                self.samples.append({
+                    'type': 'positive',
+                    'filename': sample['filename'],
+                    'text': sample['text'],
+                    'label': 1,
+                    'duration': sample['duration'],
+                    'augmentation': 'time_shift',
+                })
+                
+                # 4-5. 噪声混合增强 (应用两次，每次随机选用不同噪声文件和SNR进行混合)
+                self.samples.append({
+                    'type': 'positive',
+                    'filename': sample['filename'],
+                    'text': sample['text'],
+                    'label': 1,
+                    'duration': sample['duration'],
+                    'augmentation': 'noise_mix_0',
+                })
+                self.samples.append({
+                    'type': 'positive',
+                    'filename': sample['filename'],
+                    'text': sample['text'],
+                    'label': 1,
+                    'duration': sample['duration'],
+                    'augmentation': 'noise_mix_1',
+                })
+                
+                # 6. SpecAugment增强
+                self.samples.append({
+                    'type': 'positive',
+                    'filename': sample['filename'],
+                    'text': sample['text'],
+                    'label': 1,
+                    'duration': sample['duration'],
+                    'augmentation': 'specaugment'
+                })
         
         # 处理负样本 - 应用滑动窗口
         for sample in self.neg_samples:
@@ -217,7 +218,13 @@ class WakeWordDataset(Dataset):
                     noise_power = np.mean(noise ** 2)
                     
                     # 根据SNR缩放噪声,确保了噪声被适当缩放，以达到期望的SNR水平
-                    scale = np.sqrt(signal_power / (noise_power * (10 ** (snr / 10))))
+                    epsilon = 1e-10  # 一个很小的值，防止除零
+                    signal_power = max(signal_power, epsilon)  # 确保信号功率不为零
+                    noise_power = max(noise_power, epsilon)    # 确保噪声功率不为零
+                    snr_factor = 10 ** (snr / 10)
+                    scale = np.sqrt(signal_power / (noise_power * snr_factor))
+                    if np.isnan(scale) or np.isinf(scale):
+                        scale = 0.1  # 设置一个安全的默认值
                     scaled_noise = scale * noise
                     
                     # 叠加混合
@@ -227,58 +234,11 @@ class WakeWordDataset(Dataset):
                     max_abs_value = np.max(np.abs(audio))
                     if max_abs_value > 1.0:
                         audio = audio / max_abs_value
-                
-                        
-            elif sample['augmentation'] == 'specaugment':
-                # SpecAugment增强,SpecAugment 是一种专为语音识别任务设计的频谱图级别(spectrogram-level)的数据增强技术，
-                # 由 Google 在 2019 年提出。它直接在音频的频谱表示上进行操作，而不是在原始波形上，
-                # 可以有效提高模型对不同环境和说话方式的适应性。
-                # 将音频转换为梅尔频谱图
-                mel_spec = librosa.feature.melspectrogram(y=audio, sr=self.sr) # 将原始音频波形转换为梅尔频谱图
-                mel_spec_db = librosa.power_to_db(mel_spec) # 将功率谱转换为分贝(dB)尺度的表示
-                
-                # 时间掩码
-                # 随机选择时间轴上的一段区域（10%宽度）
-                # 将该区域设置为接近静音的值（-80dB）
-                # 这模拟了语音中某些时间片段被干扰或丢失的情况
-                time_mask_width = int(mel_spec.shape[1] * 0.1)  # 掩码宽度为时间轴的10%
-                if time_mask_width > 0:  # 确保掩码宽度大于0
-                    t0 = np.random.randint(0, mel_spec.shape[1] - time_mask_width + 1)
-                    mel_spec_db[:, t0:t0 + time_mask_width] = -80.0  # -80 dB相当于静音
-                
-                # 频率掩码
-                # 随机选择频率轴上的一段区域（10%高度）
-                # 将该区域设置为接近静音的值（-80dB）
-                # 这模拟了某些频率段被干扰或环境噪声遮盖的情况
-                freq_mask_height = int(mel_spec.shape[0] * 0.1)  # 掩码高度为频率轴的10%
-                if freq_mask_height > 0:  # 确保掩码高度大于0
-                    f0 = np.random.randint(0, mel_spec.shape[0] - freq_mask_height + 1)
-                    mel_spec_db[f0:f0 + freq_mask_height, :] = -80.0
-                
-                # 从梅尔频谱图重建音频
-                # 音频波形到梅尔频谱图再回到音频波形不是完全可逆的变换，这个过程确实会产生失真。这主要是因为：
-                # 信息损失的几个关键环节
-                # 1 相位信息丢失
-                # 在计算梅尔频谱时，只保留了幅度/功率信息，而丢弃了相位信息
-                # 在逆变换时需要通过Griffin-Lim等算法估计相位，这是一个近似过程
-                # 2 频率分辨率降低
-                # 梅尔滤波器组将线性频率尺度映射到知觉上更有意义的梅尔尺度
-                # 多个线性频率被合并到一个梅尔频带中，这是一种有损压缩
-                # 这种映射是不可逆的降维操作
-                mel_spec_masked = librosa.db_to_power(mel_spec_db)
-                # 使用迭代算法重建音频，结果取决于迭代次数和初始条件
-                audio = librosa.feature.inverse.mel_to_audio(
-                    mel_spec_masked, sr=self.sr, n_fft=2048, hop_length=512
-                )
-                
-                # 确保梅尔频谱转换回的音频和原始音频长度一致
-                if len(audio) > len(mel_spec[0]) * 512:
-                    # 若当前遍历得到的音频长度大于梅尔频谱图转换回的音频长度，则截断
-                    audio = audio[:len(mel_spec[0]) * 512]
-                elif len(audio) < len(mel_spec[0]) * 512:
-                    # 若当前遍历得到的音频长度小于梅尔频谱图转换回的音频长度，则尾部零填充
-                    audio = np.pad(audio, (0, len(mel_spec[0]) * 512 - len(audio)), 'constant')
-            
+
+            # 在训练过程中提取logMel谱图后顺势增强，而不是在这里增强
+            # elif sample['augmentation'] == 'specaugment':
+                # SpecAugment增强
+                # 移动至train_model.py过程中实现，仅对sample['augmentation'] == 'specaugment'的样本进行SpecAugment增强
     
             # 截断或零填充至窗口大小
             # 训练时随机化提高泛化能力，验证/测试时使用确定性方法保证一致性。
@@ -336,13 +296,4 @@ class WakeWordDataset(Dataset):
         audio_tensor = torch.FloatTensor(audio).unsqueeze(0) # 形状[1, window_size]
         label = torch.tensor(sample['label'], dtype=torch.float)
         
-        return audio_tensor, label, sample['filename']
-    
-    # +++++ example +++++
-    # def __getitem__(self, idx):
-    #     audio_path = self.data_list[idx]
-    #     sample, _ = torchaudio.load(audio_path)
-    #     if self.transform:
-    #         sample = self.transform(sample)
-    #     label = self.labels[idx]
-    #     return sample, label
+        return audio_tensor, label, sample['filename'], sample.get('augmentation', 'none')

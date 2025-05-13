@@ -36,15 +36,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+import torchaudio.transforms as T
 from tqdm import tqdm
 import librosa
 import sys
+from sklearn.metrics import precision_recall_curve, auc, f1_score
 
 # 导入自定义模块
-from WakewordModel.bcresnet import BCResNets
 from WakewordModel.detector import WakeWordDetector
 from AudioProcessor.logmel import LogMelFeatureExtractor
 from DataLoader.dataset import WakeWordDataset
+from AudioProcessor.specaug import SpecAugmentation
 
 
 # 设置随机种子确保可重复性
@@ -90,35 +92,6 @@ def setup_logger(workspace):
     
     return logger
 
-def calculate_eer(scores, labels):
-    # 设置多个阈值
-    thresholds = np.linspace(0, 1, 100)
-    fars = []
-    frrs = []
-    
-    for threshold in thresholds:
-        preds = (scores > threshold).astype(int)
-        
-        # 计算混淆矩阵元素
-        tp = np.sum((preds == 1) & (labels == 1))
-        fn = np.sum((preds == 0) & (labels == 1))
-        fp = np.sum((preds == 1) & (labels == 0))
-        tn = np.sum((preds == 0) & (labels == 0))
-        
-        # 计算FRR和FAR
-        frr = fn / (tp + fn) if (tp + fn) > 0 else 0
-        far = fp / (fp + tn) if (fp + tn) > 0 else 0
-        
-        fars.append(far)
-        frrs.append(frr)
-    
-    # 找到FAR和FRR最接近的点
-    abs_diffs = np.abs(np.array(fars) - np.array(frrs))
-    min_index = np.argmin(abs_diffs)
-    eer = (fars[min_index] + frrs[min_index]) / 2
-    
-    return eer, thresholds[min_index]
-
 # 评估函数
 def evaluate_on_dev(model, dataloader, device, LogMelFeature, criterion, epoch, calculate_errors=False):
     '''
@@ -127,12 +100,12 @@ def evaluate_on_dev(model, dataloader, device, LogMelFeature, criterion, epoch, 
     
     model.eval()
     total_loss = 0
-    all_preds = []
+    all_scores = [] # 原始预测分数（sigmoid后的概率值）
     all_labels = []
     all_filenames = []
     
     with torch.no_grad():
-        for inputs, labels, filenames in dataloader:
+        for inputs, labels, filenames, _ in dataloader:
             inputs = inputs.to(device)
             labels = labels.to(device)
             
@@ -145,58 +118,58 @@ def evaluate_on_dev(model, dataloader, device, LogMelFeature, criterion, epoch, 
             
             # 统计
             total_loss += loss.item()
-            preds = (torch.sigmoid(outputs) > 0.55).float()
+            scores = torch.sigmoid(outputs).cpu().numpy()  # 保存预测分数（0.0~1.0）
             
-            all_preds.extend(preds.cpu().numpy())
+            all_scores.extend(scores)
             all_labels.extend(labels.cpu().numpy())
             all_filenames.extend(filenames)
     
     # 计算指标
     avg_loss = total_loss / len(dataloader)
-    correct = sum(np.array(all_preds) == np.array(all_labels))
-    accuracy = correct / len(all_labels)
+    all_scores = np.array(all_scores)
+    all_labels = np.array(all_labels)
     
-    # 计算精确率和召回率
-    # 真正例：模型预测为1（有唤醒词），实际标签也是1（有唤醒词）
-    tp = sum((np.array(all_preds) == 1) & (np.array(all_labels) == 1))
-    # 假正例：模型预测为1（有唤醒词），实际标签是0（没有唤醒词）
-    fp = sum((np.array(all_preds) == 1) & (np.array(all_labels) == 0))
-    # 真负例：模型预测为0（没有唤醒词），实际标签也是0（没有唤醒词）
-    tn = sum((np.array(all_preds) == 0) & (np.array(all_labels) == 0))
-    # 假负例：模型预测为0（没有唤醒词），实际标签是1（有唤醒词）
-    fn = sum((np.array(all_preds) == 0) & (np.array(all_labels) == 1))
+    # 使用sklearn计算PR曲线和AUCPR
+    precision_values, recall_values, thresholds_pr = precision_recall_curve(all_labels, all_scores)
+    aucpr = auc(recall_values, precision_values)
     
-    # 精确率：TP / (TP + FP)。在所有被预测为"有唤醒词"的样本中，真正包含唤醒词的比例
-    precision = tp / (tp + fp) if tp + fp > 0 else 0
-    # 召回率：TP / (TP + FN)。在所有实际包含唤醒词的样本中，被正确预测为"有唤醒词"的比例
-    recall = tp / (tp + fn) if tp + fn > 0 else 0
-    # FRR：False Rejection Rate，误拒绝率，FRR = FN / (TP + FN)，在所有包含唤醒词的正样本中，错误拒绝的比例
-    frr = fn / (tp + fn) if tp + fn > 0 else 0
-    # FAR：False Acceptance Rate，误接受率，FAR = FP / (TN + FP)，在所有不包含唤醒词的负样本中，错误接受的比例
-    far = fp / (tn + fp) if tn + fp > 0 else 0
-    # F1分数：2 * (精确率 * 召回率) / (精确率 + 召回率)。综合考虑精确率和召回率的指标
-    f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
+    # 计算不同阈值下的F1值
+    threshold_list = np.arange(0.0, 1.05, 0.05)
+    f1_scores = {}
     
-    # 记录错误样本
+    for threshold in threshold_list:
+        binary_preds = (all_scores >= threshold).astype(int)
+        f1 = f1_score(all_labels, binary_preds, zero_division=0)
+        f1_scores[f"{threshold:.2f}"] = f1
+        
+    best_threshold = max(f1_scores.items(), key=lambda x: x[1])[0]
+    best_f1 = f1_scores[best_threshold]
+    
+    best_threshold_float = float(best_threshold)
+    all_preds = (all_scores >= best_threshold_float).astype(int)
+    # 记录错误样本,这里错误样本的判断阈值基于前面计算得到的best_f1值情况下的best_threshold_float
     errors = []
     if calculate_errors:
-        for pred, label, filename in zip(all_preds, all_labels, all_filenames):
+        for pred, label, filename, score in zip(all_preds, all_labels, all_filenames, all_scores):
             if pred != label:
                 errors.append({
                     "epoch": epoch,
                     "filename": filename,
                     "predict_label": int(pred),
-                    "true_label": int(label)
+                    "true_label": int(label),
+                    "predict_score": float(score)  # 添加预测分数，方便分析
                 })
     
-    return {
-        "epoch": epoch,
-        "loss": avg_loss,
-        "accuracy": accuracy,
-        "precision": precision,
-        "recall": recall,
-        "f1": f1
-    }, errors
+    results = {
+        'epoch': epoch,
+        'loss': avg_loss,
+        'aucpr': aucpr,
+        'best_threshold': float(best_threshold),
+        'best_f1': best_f1,
+        'f1_scores': f1_scores,
+    }
+    
+    return results, errors
 
 # 主训练函数
 def train(args):
@@ -246,16 +219,20 @@ def train(args):
         #     __getitem__(self, idx): 根据索引返回单个样本
         batch_size=args.batch_size, # 每个批次的样本数量
         shuffle=True, # 是否在每个epoch开始时打乱数据集（训练时通常设置为True，模型训练时正负样本交叉输入）
-        num_workers=6, # 用于并行加载数据的子进程数量，提高数据加载效率
-        pin_memory=args.use_gpu # 是否将数据放入CUDA固定内存，可加速GPU训练时的数据传输
+        num_workers=18, # 用于并行加载数据的子进程数量，提高数据加载效率
+        pin_memory=args.use_gpu, # 是否将数据放入CUDA固定内存，可加速GPU训练时的数据传输
+        persistent_workers=False, # 保持工作进程存活，工作进程在整个DataLoader生命周期内保持活跃，避免了每个epoch结束时销毁进程、新epoch开始时重新创建进程的开销
+        prefetch_factor=4 # 预取因子，默认值: 2，每个工作进程预加载的数据批次倍数。每个工作进程预取的样本数 = prefetch_factor * batch_size。减少GPU等待时间: GPU处理完当前批次后，下一批次数据已准备就绪。增加内存占用: 每个工作进程都会缓存更多数据，总内存使用量增加
     )
     
     dev_loader = DataLoader(
         dev_dataset,
         batch_size=args.batch_size,
         shuffle=False,
-        num_workers=6,
-        pin_memory=args.use_gpu
+        num_workers=18,
+        pin_memory=args.use_gpu,
+        persistent_workers=False, # 保持工作进程存活，工作进程在整个DataLoader生命周期内保持活跃，避免了每个epoch结束时销毁进程、新epoch开始时重新创建进程的开销
+        prefetch_factor=4 # 预取因子，默认值: 2，每个工作进程预加载的数据批次倍数。每个工作进程预取的样本数 = prefetch_factor * batch_size。减少GPU等待时间: GPU处理完当前批次后，下一批次数据已准备就绪。增加内存占用: 每个工作进程都会缓存更多数据，总内存使用量增加
     )
     
     # check dataset size
@@ -271,8 +248,8 @@ def train(args):
     
     # 定义损失函数
     # 为正样本添加权重，值可以根据不平衡程度调整
-    # 由于实际训练时负样本为正样本的50~100倍，可以设置为100或接近的值
-    pos_weight = torch.tensor([50.0])  # 可以根据实际情况进行调整
+    # 由于实际训练时负样本为正样本的10~50倍，可以设置为20或接近的值
+    pos_weight = torch.tensor([10.0])  # 可以根据实际情况进行调整
     criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight).to(device) # 当你使用pos_weight参数时，这个损失函数会在内部保存这个权重张量。当模型和数据都在GPU（或其他特定设备）上时，损失函数内部的张量也需要在同一设备上，否则会导致计算错误。故需要to(device)将pos_weight转移到相同的设备上。
     # 定义优化器
     optimizer = torch.optim.SGD(
@@ -286,13 +263,6 @@ def train(args):
     n_step_warmup = len(train_loader) * args.warmup_epoch # 使用len()函数获取train_loader的长度（即每个epoch的批次数），乘以args.warmup_epoch（预热epoch数）得到预热阶段的总步数（总批次数）
     total_iter = len(train_loader) * args.total_epochs # 训练的总迭代次数（总共需要遍历的批次数）
     
-    # 初始化预处理器
-    # 寻找噪声目录
-    noise_dir = "/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/baselines/KWS/bcresnet/data/speech_commands_v0.02/_background_noise_", # 这里的输入的noise_dir结构应形如speech_commands_v0.02/_background_noise_一样，其中包含多个.wav噪声文件   
-        
-    # 针对不同的模型版本，设置不同的频谱增强参数
-    frequency_masking_para = {1: 0, 1.5: 1, 2: 3, 3: 5, 6: 7, 8: 7}
-    
     # 定义音频logMel特征提取器
     LogMelFeature = LogMelFeatureExtractor(
         device=device,
@@ -303,24 +273,18 @@ def train(args):
         n_mels=40
     )
     
-    # 预处理器，需要修改，beta v1.0暂不添加预处理，只使用logMel特征提取器提取音频特征
-    # preprocess = Preprocess(
-    #     noise_loc = noise_dir,
-    #     device = device,
-    #     hop_length=160, # 提取logMel时的步长
-    #     win_length=480, # 提取logMel时的窗口长度
-    #     n_fft=512, # 提取logMel时的FFT大小
-    #     n_mels=40, # 提取logMel时的梅尔频率数量
-    #     specaug = (args.model_version >= 1.5),
-    #     sample_rate = 16000, # 采样率
-    #     frequency_masking_para = frequency_masking_para[args.model_version],
-    #     time_masking_para=20, # 频域增强时，时间掩码的最大宽度
-    #     frequency_mask_num=2, # 频域增强时，频率掩码的数量
-    #     time_mask_num=2 # 频域增强时，时间掩码的数量
-    # )
-    # 训练过程中，数据增强使用样例：
-    # inputs = self.preprocess_train(inputs, labels, augment=True) # 预处理训练数据，进行数据增强，包括1. 噪声增强 2. 时间偏移 3. 频谱增强（具体是否执行，依据选择的BC-Resnet版本）
-    # outputs = self.model(inputs) # 得到模型输出，这里的输出是一个 batch 的预测结果，形状是[batch_size, num_classes]
+    # 初始化SpecAugmentation
+    # 参数可以根据你的数据集和模型进行调整
+    # freq_mask_param: 频率掩码的最大宽度 (F)。对于n_mels=40，可以尝试5-10。
+    # time_mask_param: 时间掩码的最大宽度 (T)。取决于你的音频帧数，可以尝试10-30。
+    # num_freq_masks: 应用的频率掩码数量 (m_F)。通常为1或2。
+    # num_time_masks: 应用的时间掩码数量 (m_T)。通常为1或2。
+    spec_augmenter = SpecAugmentation(
+        freq_mask_param=8,    # 例如，最大8个mel bin被遮盖
+        time_mask_param=20,   # 例如，最大20个时间帧被遮盖
+        num_freq_masks=2,     # 应用1个频率遮盖
+        num_time_masks=2      # 应用1个时间遮盖
+    ).to(device) # 将SpecAugmentation模块也移动到相应的设备
     
     # 打印训练参数及训练配置
     logger.info(f"[INFO] Training parameters: ")
@@ -347,14 +311,18 @@ def train(args):
     logger.info(f"  - Window stride: {window_stride}")
     logger.info(f"  - Device: {device}")
     logger.info(f"++++++++ augmentation settings +++++++++")
-    logger.info(f"  - Frequency masking parameter: {frequency_masking_para[args.model_version]}")
-    logger.info(f"  - Noise directory: {noise_dir}")
-    logger.info(f"  - SpecAugment: {args.model_version >= 1.5}")
     logger.info(f"====================================")
     
     
     # 训练准备
-    best_metrics = {"f1": 0, "accuracy": 0, "epoch": 0}
+    best_metrics = {
+        'epoch': 0,
+        'aucpr': 0,
+        'best_f1': 0,
+        'best_threshold': 0.5,
+        'loss': float('inf'),
+        'f1_scores': {}
+    }
     all_dev_errors = []
     iterations = 0
     
@@ -367,7 +335,7 @@ def train(args):
             epoch_correct = 0
             epoch_total = 0
             
-            for inputs, labels, _ in train_loader:
+            for batch_idx, (inputs, labels, filenames, aug_types) in enumerate(train_loader):
                 # 当前【批次】的迭代，每迭代一个datasetloader中的一个batch，iter++
                 # 当使用 for inputs, labels, _ in train_loader: 迭代时，DataLoader会自动对批次中的样本进行合并：
                 # inputs: 从[1, window_size] 变为 [batch_size, 1, window_size]
@@ -396,8 +364,19 @@ def train(args):
                 # 提取音频logMel特征
                 inputs_logmel = LogMelFeature(inputs) # 提取音频特征
                 
-                # 数据增强
-                # inputs_aug = AudioAugmentation(inputs_logmel)
+                # 应用SpecAugment
+                # 创建一个布尔掩码，标记哪些样本需要SpecAugment
+                needs_specaug_mask = torch.tensor([aug_type == 'specaugment' for aug_type in aug_types], device=device)
+                
+                # 如果批次中至少有一个样本需要SpecAugment
+                if needs_specaug_mask.any():
+                    # 选择需要增强的样本
+                    samples_to_augment = inputs_logmel[needs_specaug_mask]
+                    # 应用增强
+                    augmented_samples = spec_augmenter(samples_to_augment)
+                    # 将增强后的样本放回原位
+                    # inputs_logmel是一个张量，可以直接通过布尔掩码进行索引和赋值
+                    inputs_logmel[needs_specaug_mask] = augmented_samples
                 
                 # 前向传播
                 outputs = model(inputs_logmel).squeeze()
@@ -410,7 +389,7 @@ def train(args):
                 
                 # 统计在当前训练批次上的损失和准确率（使用固定阈值0.5）
                 epoch_loss += loss.item()
-                preds = (torch.sigmoid(outputs) > 0.55).float()
+                preds = (torch.sigmoid(outputs) > 0.75).float()
                 correct = (preds == labels).sum().item()
                 epoch_correct += correct
                 epoch_total += len(labels)
@@ -420,7 +399,7 @@ def train(args):
                 pbar.set_postfix({
                     "epoch": f"{epoch+1}/{args.total_epochs}",
                     "loss": f"{loss.item():.4f}",
-                    "acc(threshold=0.55)": f"{correct/len(labels):.4f}",
+                    "acc(threshold=0.75)": f"{correct/len(labels):.4f}",
                     "lr": f"{lr:.6f}"
                 })
             
@@ -429,7 +408,7 @@ def train(args):
             train_acc = epoch_correct / epoch_total # 当前epoch的平均准确率（每个epoch都会遍历所有训练数据）
             
             # 记录日志
-            logger.info(f"[INFO] Epoch {epoch+1}/{args.total_epochs} - Train Loss: {train_loss:.4f}, Acc: {train_acc:.4f}")
+            logger.info(f"[INFO] Epoch {epoch+1}/{args.total_epochs} - Train Loss: {train_loss:.4f}, Acc(threshold=0.75): {train_acc:.4f}")
             
             # 在dev集上评估（每eval_on_dev_epoch_stride步评估一次，最后一个epoch再评估一次）
             if (epoch + 1) % args.eval_on_dev_epoch_stride == 0 or epoch == args.total_epochs - 1:
@@ -441,8 +420,12 @@ def train(args):
                 all_dev_errors.extend(dev_errors)
                 
                 # 记录日志
-                logger.info(f"[INFO] Epoch {dev_metrics['epoch']} : Evaluate on Dev - Loss: {dev_metrics['loss']:.4f}, Acc: {dev_metrics['accuracy']:.4f}, " + 
-                           f"Prec: {dev_metrics['precision']:.4f}, Rec: {dev_metrics['recall']:.4f}, F1: {dev_metrics['f1']:.4f}")
+                logger.info(f"[INFO] Epoch {dev_metrics['epoch']} : Evaluate on Dev - " + 
+                           f"Loss: {dev_metrics['loss']:.4f}, AUCPR: {dev_metrics['aucpr']:.6f}, " + 
+                           f"Best F1: {dev_metrics['best_f1']:.4f} @ threshold={dev_metrics['best_threshold']:.2f} " +
+                           f"F1 Score: {dev_metrics['f1_scores']}"
+                           )
+                
                 
                 # 保存当前模型
                 current_model_path = os.path.join(model_dir, f"model_{epoch+1}.pt")
@@ -453,11 +436,13 @@ def train(args):
                     'optimizer_state_dict': optimizer.state_dict(),
                     'window_size': window_size,
                     'window_stride': window_stride,
+                    'model_version': args.model_version, 
+                    'spec_group_num': args.spec_group_num, 
                     'metrics': dev_metrics
                 }, current_model_path)
                 
                 # 更新最佳模型，更新依据：F1分数
-                if dev_metrics['f1'] > best_metrics['f1']:
+                if dev_metrics['aucpr'] > best_metrics.get('aucpr', 0):
                     best_metrics = {**dev_metrics, 'epoch': epoch + 1}
                     best_model_path = os.path.join(model_dir, "model_best.pt")
                     torch.save({
@@ -467,9 +452,11 @@ def train(args):
                         'optimizer_state_dict': optimizer.state_dict(),
                         'window_size': window_size,
                         'window_stride': window_stride,
+                        'model_version': args.model_version, 
+                        'spec_group_num': args.spec_group_num, 
                         'metrics': dev_metrics
                     }, best_model_path)
-                    logger.info(f"[INFO] New best model saved! F1: {best_metrics['f1']:.4f}")
+                    logger.info(f"[INFO] New best model saved! AUCPR: {best_metrics['aucpr']:.6f}")
     
     # 保存开发集错误记录
     dev_errors_path = os.path.join(train_dir, "dev_errors.json")
@@ -479,10 +466,10 @@ def train(args):
     # 训练完成日志
     logger.info("[INFO] Training completed!")
     logger.info(f"[INFO] Best model (epoch {best_metrics['epoch']}):")
-    logger.info(f"  Accuracy: {best_metrics['accuracy']:.4f}")
-    logger.info(f"  Precision: {best_metrics['precision']:.4f}")
-    logger.info(f"  Recall: {best_metrics['recall']:.4f}")
-    logger.info(f"  F1: {best_metrics['f1']:.4f}")
+    logger.info(f"  AUCPR: {best_metrics['aucpr']:.6f}")
+    logger.info(f"  Best F1: {best_metrics['best_f1']:.4f} @ threshold={best_metrics['best_threshold']:.2f}")
+    logger.info(f"  Loss: {best_metrics['loss']:.4f}")
+    logger.info(f"  F1 Score: {best_metrics['f1_scores']}")
     logger.info(f"[INFO] Development errors saved to {dev_errors_path}")
     logger.info(f"====================================")
 

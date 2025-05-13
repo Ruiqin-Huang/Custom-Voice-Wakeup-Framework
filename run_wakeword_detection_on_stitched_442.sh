@@ -3,29 +3,30 @@ set -e
 # . ./path.sh || exit 1 # source path.sh
 
 # Usage: 
-# ./run_audio_diarization-cluster.sh --help to see the help message
+# ./run_wakeword_detection.sh 
 
 # 定义默认值
 # ======== 自定义唤醒词 ========
 DEFAULT_WAKEWORD="hey fire fox" # 唤醒词
 # ======== 数据集设置 ========
 DEFAULT_NEG_SOURCE_DIR="/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/datasets/Common_Voice/en/Common_Voice_corpus_4_en_sampled_22500-5000-5000" # 负样本数据集路径
-DEFAULT_POS_SOURCE_DIR="/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/datasets/Hey-Fire-Fox/hey-ff-data-in-mcv-format" # 正样本数据集路径
+DEFAULT_POS_SOURCE_DIR="/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/baselines/KWS/bcresnet/data/hey-fire-fox-stitched-442" # 正样本数据集路径
+DEFAULT_NOISE_SOURCE_DIR="/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/baselines/KWS/bcresnet/data/MS-SNSD_noise_train_16khz" # 噪声源文件夹路径
 DEFAULT_NEGATIVE_TRAIN_DURATION=20000 # 负样本训练集时长（秒）
 DEFAULT_NEGATIVE_DEV_DURATION=4000 # 负样本验证集时长（秒）
 DEFAULT_NEGATIVE_TEST_DURATION=4000 # 负样本测试集时长（秒）
-DEFAULT_POSITIVE_TRAIN_DURATION=1000 # 正样本训练集时长（秒）
-DEFAULT_POSITIVE_DEV_DURATION=200 # 正样本验证集时长（秒）
-DEFAULT_POSITIVE_TEST_DURATION=200 # 正样本测试集时长（秒）
+DEFAULT_POSITIVE_TRAIN_DURATION=500 # 正样本训练集时长（秒）
+DEFAULT_POSITIVE_DEV_DURATION=230 # 正样本验证集时长（秒）
+DEFAULT_POSITIVE_TEST_DURATION=220 # 正样本测试集时长（秒）
 # ======== 模型设置 ========
 DEFAULT_MODEL_VERSION=3 # 模型版本
 DEFAULT_SPEC_GROUP_NUM=5 # 频谱组数
 # ======== 训练设置 ========
 DEFAULT_BATCH_SIZE=128 # 批大小
 DEFAULT_WINDOW_STRIDE_RATIO=0.25 # 窗口步幅比率
-DEFAULT_TOTAL_EPOCHS=200 # 总训练轮数
+DEFAULT_TOTAL_EPOCHS=300 # 总训练轮数
 DEFAULT_WARMUP_EPOCH=10 # 预热轮数
-DEFAULT_EVAL_ON_DEV_EPOCH_STRIDE=10 # 验证集评估轮数步幅
+DEFAULT_EVAL_ON_DEV_EPOCH_STRIDE=20 # 验证集评估轮数步幅
 DEFAULT_INIT_LR=1e-1 # 初始学习率
 DEFAULT_LR_LOWER_LIMIT=1e-6 # 学习率下限
 DEFAULT_WEIGHT_DECAY=1e-3 # 权重衰减
@@ -33,12 +34,12 @@ DEFAULT_MOMENTUM=0.9 # 动量
 # ======== 推理设置 ========
 # TODO: 需要添加推理阶段的参数设置
 # ======== 工作区设置 ========
-DEFAULT_WORKSPACE="./workspace/hff-testrun-1-20250506" # 工作目录
+DEFAULT_WORKSPACE="./workspace/run_wakeword_detection_on_stitched_442" # 工作目录
 # ======== 设备设置 ========
 DEFAULT_USE_GPU="true" # 是否使用GPU
-DEFAULT_GPUS="1" # GPU设备ID,目前仅支持单GPU训练
+DEFAULT_GPUS="3" # GPU设备ID,目前仅支持单GPU训练
 # ======== 实验设置 ========
-DEFAULT_RUN_STAGE="4" # 指定要执行的阶段 (1-5)，用空格分隔
+DEFAULT_RUN_STAGE="6" # 指定要执行的阶段 (1-5)，用空格分隔
 
 # 帮助函数
 # show_usage() {
@@ -61,6 +62,7 @@ wakeword="$DEFAULT_WAKEWORD" # 唤醒词
 # ======== 数据集设置 ========
 neg_source_dir="$DEFAULT_NEG_SOURCE_DIR" # 负样本数据集路径
 pos_source_dir="$DEFAULT_POS_SOURCE_DIR" # 正样本数据集路径
+noise_source_dir="$DEFAULT_NOISE_SOURCE_DIR" # 噪声数据集路径
 negative_train_duration="$DEFAULT_NEGATIVE_TRAIN_DURATION" # 负样本训练集时长（秒）
 negative_dev_duration="$DEFAULT_NEGATIVE_DEV_DURATION" # 负样本验证集时长（秒）
 negative_test_duration="$DEFAULT_NEGATIVE_TEST_DURATION" # 负样本测试集时长（秒）
@@ -123,6 +125,7 @@ echo "wakeword: $wakeword"
 echo "========数据集设置========"
 echo "neg_source_dir: $neg_source_dir"
 echo "pos_source_dir: $pos_source_dir"
+echo "noise_source_dir: $noise_source_dir"
 echo "negative_train_duration: $negative_train_duration"
 echo "negative_dev_duration: $negative_dev_duration"
 echo "negative_test_duration: $negative_test_duration"
@@ -142,8 +145,6 @@ echo "  init_lr: $init_lr"
 echo "  lr_lower_limit: $lr_lower_limit"
 echo "  weight_decay: $weight_decay"
 echo "  momentum: $momentum"
-echo "========推理设置========"
-# TODO: 需要添加推理阶段的参数设置
 echo "========工作区设置========"
 echo "  workspace: $workspace"
 echo "========设备设置========"
@@ -175,7 +176,7 @@ else
 fi
 
 # Stage 2: Generate positive dataset
-# 生成正样本数据集，有三种生成形式，分别是：[1]加载录制得到的真实唤醒词数据集 [2]加载从mcv中对齐+拼接得到的唤醒词数据集 [3]加载TTS合成得到的唤醒词数据集 [4]加载克隆得到的唤醒词数据集
+# 生成正样本数据集
 if [[ $run_stage =~ (^|[[:space:]])2($|[[:space:]]) ]]; then
     echo "++++++++ Stage 2: Generate positive dataset ++++++++"
     # 从指定的正样本数据集中生成正样本数据集，这里采样的依据不是根据音频数量，而是根据音频时长。（考虑到正负集中每条音频时长不相同，本实验中提到的【正集:负集】的比例指的是音频时长的比例，而非音频数量的比例）
@@ -184,19 +185,29 @@ else
     echo "++++++++ Skipping Stage 2: Generate positive dataset ++++++++"
 fi
 
-# Stage 3: Generate dataset_info.json for the dataset
-# 生成数据集统计信息dataset_info.json，依据workspace/dataset/positive和workspace/dataset/negative目录下的jsonl文件生成
+# Stage 3: Generate noise dataset
+# 生成噪声数据集，依据指定的噪声源文件夹生成噪声数据集
 if [[ $run_stage =~ (^|[[:space:]])3($|[[:space:]]) ]]; then
-    echo "++++++++ Stage 3: Generate dataset_info.json for the dataset ++++++++"
-    python ${SCRIPT_DIR}/local/generate_dataset_info.py --workspace "$workspace"
+    echo "++++++++ Stage 3: Generate noise dataset ++++++++"
+    # 从指定的噪声源文件夹生成噪声数据集
+    python ${SCRIPT_DIR}/local/generate_noise_dataset.py --noise_source_dir "$noise_source_dir" --workspace "$workspace"
 else
-    echo "++++++++ Skipping Stage 3: Generate dataset_info.json for the dataset ++++++++"
+    echo "++++++++ Skipping Stage 3: Generate noise dataset ++++++++"
 fi
 
-# Stage 4: Train the model
-# 训练模型，依据指定的模型配置文件进行训练，其中训练和推理过程中的window_size及window_stride均取决于正集训练集的平均音频时长，window_stride = window_stride_ratio * window_size
+# Stage 4: Generate dataset_info.json for the dataset
+# 生成数据集统计信息dataset_info.json，依据workspace/dataset/positive和workspace/dataset/negative目录下的jsonl文件生成
 if [[ $run_stage =~ (^|[[:space:]])4($|[[:space:]]) ]]; then
-    echo "++++++++ Stage 4: Train the model ++++++++"
+    echo "++++++++ Stage 4: Generate dataset_info.json for the dataset ++++++++"
+    python ${SCRIPT_DIR}/local/generate_dataset_info.py --workspace "$workspace"
+else
+    echo "++++++++ Skipping Stage 4: Generate dataset_info.json for the dataset ++++++++"
+fi
+
+# Stage 5: Train the model
+# 训练模型，依据指定的模型配置文件进行训练，其中训练和推理过程中的window_size及window_stride均取决于正集训练集的平均音频时长，window_stride = window_stride_ratio * window_size
+if [[ $run_stage =~ (^|[[:space:]])5($|[[:space:]]) ]]; then
+    echo "++++++++ Stage 5: Train the model ++++++++"
     if [[ "$use_gpu" == "true" ]]; then
     # eg.: $gpu = "0" # 使用的GPU设备ID
         python ${SCRIPT_DIR}/local/train_model.py --workspace "$workspace" --model_version "$model_version" --spec_group_num "$spec_group_num" --batch_size "$batch_size" --window_stride_ratio "$train_window_stride_ratio" --total_epochs "$total_epochs" --warmup_epoch "$warmup_epoch" --eval_on_dev_epoch_stride "$eval_on_dev_epoch_stride" --init_lr "$init_lr" --lr_lower_limit "$lr_lower_limit" --weight_decay "$weight_decay" --momentum "$momentum" --gpu "$gpu" --use_gpu
@@ -204,18 +215,18 @@ if [[ $run_stage =~ (^|[[:space:]])4($|[[:space:]]) ]]; then
         python ${SCRIPT_DIR}/local/train_model.py --workspace "$workspace" --model_version "$model_version" --spec_group_num "$spec_group_num" --batch_size "$batch_size" --window_stride_ratio "$train_window_stride_ratio" --total_epochs "$total_epochs" --warmup_epoch "$warmup_epoch" --eval_on_dev_epoch_stride "$eval_on_dev_epoch_stride" --init_lr "$init_lr" --lr_lower_limit "$lr_lower_limit" --weight_decay "$weight_decay" --momentum "$momentum"
     fi
 else
-    echo "++++++++ Skipping Stage 4: Train the model ++++++++"
+    echo "++++++++ Skipping Stage 5: Train the model ++++++++"
 fi
 
-# Stage 5: Eval on the test set
+# Stage 6: Eval on the test set
 # 在测试集上评估模型性能并生成结果报告
-if [[ $run_stage =~ (^|[[:space:]])5($|[[:space:]]) ]]; then
-    echo "++++++++ Stage 5: Eval on the test set ++++++++"
+if [[ $run_stage =~ (^|[[:space:]])6($|[[:space:]]) ]]; then
+    echo "++++++++ Stage 6: Eval on the test set ++++++++"
     if [[ "$use_gpu" == "true" ]]; then
-        python ${SCRIPT_DIR}/local/eval_model.py --workspace "$workspace" --model_version "$model_version" --spec_group_num "$spec_group_num" --batch_size "$batch_size" --window_stride_ratio "$train_window_stride_ratio" --gpu "$gpu" --use_gpu
+        python ${SCRIPT_DIR}/local/eval_model.py --workspace "$workspace" --batch_size "$batch_size" --gpu "$gpu" --use_gpu
     else
-        python ${SCRIPT_DIR}/local/eval_model.py --workspace "$workspace" --model_version "$model_version" --spec_group_num "$spec_group_num" --batch_size "$batch_size" --window_stride_ratio "$train_window_stride_ratio"
+        python ${SCRIPT_DIR}/local/eval_model.py --workspace "$workspace" --batch_size "$batch_size"
     fi
 else
-    echo "++++++++ Skipping Stage 5: Eval on the test set ++++++++"
+    echo "++++++++ Skipping Stage 6: Eval on the test set ++++++++"
 fi
