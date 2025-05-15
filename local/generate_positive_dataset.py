@@ -77,13 +77,13 @@ def prepare_directories(workspace):
     return positive_dir, audio_dir
 
 def load_data(source_dir, split):
-    """加载数据集TSV文件"""
+    """加载数据集TSV文件，如果文件不存在则返回None"""
     tsv_path = os.path.join(source_dir, f"{split}.tsv")
     try:
         return pd.read_csv(tsv_path, sep="\t")
     except FileNotFoundError:
-        logging.error(f"[ERROR] 找不到文件: {tsv_path}")
-        raise
+        logging.warning(f"[WARNING] 找不到文件: {tsv_path}，将生成空的pos_{split}.jsonl文件")
+        return None
     except Exception as e:
         logging.error(f"[ERROR] 加载TSV文件时出错: {e}")
         raise
@@ -220,26 +220,35 @@ def main():
         # 处理训练集
         logging.info(f"[INFO] 处理训练集...")
         train_df = load_data(args.pos_source_dir, "train")
-        filtered_train_df = filter_samples_with_wakeword(train_df, args.wakeword)
-        train_samples = sample_positive_audios(filtered_train_df, args.positive_train_duration, clips_dir)
-        train_processed = process_audio_files(train_samples, args.pos_source_dir, audio_dir, args.wakeword)
-        save_jsonl(train_processed, os.path.join(positive_dir, "pos_train.jsonl"))
-        
+        if train_df is not None:
+            filtered_train_df = filter_samples_with_wakeword(train_df, args.wakeword)
+            train_samples = sample_positive_audios(filtered_train_df, args.positive_train_duration, clips_dir)
+            train_processed = process_audio_files(train_samples, args.pos_source_dir, audio_dir, args.wakeword)
+            save_jsonl(train_processed, os.path.join(positive_dir, "pos_train.jsonl"))
+        else:
+            save_jsonl([], os.path.join(positive_dir, "pos_train.jsonl"))
+
         # 处理验证集
         logging.info(f"[INFO] 处理验证集...")
         dev_df = load_data(args.pos_source_dir, "dev")
-        filtered_dev_df = filter_samples_with_wakeword(dev_df, args.wakeword)
-        dev_samples = sample_positive_audios(filtered_dev_df, args.positive_dev_duration, clips_dir)
-        dev_processed = process_audio_files(dev_samples, args.pos_source_dir, audio_dir, args.wakeword)
-        save_jsonl(dev_processed, os.path.join(positive_dir, "pos_dev.jsonl"))
-        
+        if dev_df is not None:
+            filtered_dev_df = filter_samples_with_wakeword(dev_df, args.wakeword)
+            dev_samples = sample_positive_audios(filtered_dev_df, args.positive_dev_duration, clips_dir)
+            dev_processed = process_audio_files(dev_samples, args.pos_source_dir, audio_dir, args.wakeword)
+            save_jsonl(dev_processed, os.path.join(positive_dir, "pos_dev.jsonl"))
+        else:
+            save_jsonl([], os.path.join(positive_dir, "pos_dev.jsonl"))
+
         # 处理测试集
         logging.info(f"[INFO] 处理测试集...")
         test_df = load_data(args.pos_source_dir, "test")
-        filtered_test_df = filter_samples_with_wakeword(test_df, args.wakeword)
-        test_samples = sample_positive_audios(filtered_test_df, args.positive_test_duration, clips_dir)
-        test_processed = process_audio_files(test_samples, args.pos_source_dir, audio_dir, args.wakeword)
-        save_jsonl(test_processed, os.path.join(positive_dir, "pos_test.jsonl"))
+        if test_df is not None:
+            filtered_test_df = filter_samples_with_wakeword(test_df, args.wakeword)
+            test_samples = sample_positive_audios(filtered_test_df, args.positive_test_duration, clips_dir)
+            test_processed = process_audio_files(test_samples, args.pos_source_dir, audio_dir, args.wakeword)
+            save_jsonl(test_processed, os.path.join(positive_dir, "pos_test.jsonl"))
+        else:
+            save_jsonl([], os.path.join(positive_dir, "pos_test.jsonl"))
         
         logging.info(f"[INFO] 正样本数据集生成完成！正样本数据集保存于目录: {positive_dir}")
         logging.info(f"====================================")
