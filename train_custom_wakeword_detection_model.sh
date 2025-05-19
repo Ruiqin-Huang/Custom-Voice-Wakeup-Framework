@@ -219,15 +219,11 @@ else
     echo "++++++++ Skipping Stage 5: Train the model ++++++++"
 fi
 
-# Stage 6: Eval on the test set
+# Stage 6: Deploy on the test set
 # 在测试集上评估模型性能并生成结果报告
 if [[ $run_stage =~ (^|[[:space:]])6($|[[:space:]]) ]]; then
     echo "++++++++ Stage 6: Eval on the test set ++++++++"
-    if [[ "$use_gpu" == "true" ]]; then
-        python ${SCRIPT_DIR}/local/eval_model.py --workspace "$workspace" --batch_size "$batch_size" --gpu "$gpu" --use_gpu
-    else
-        python ${SCRIPT_DIR}/local/eval_model.py --workspace "$workspace" --batch_size "$batch_size"
-    fi
+    python deploy_model.py realtime --model /path/to/model_best.pt
 else
     echo "++++++++ Skipping Stage 6: Eval on the test set ++++++++"
 fi
