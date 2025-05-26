@@ -208,8 +208,6 @@ def train(args):
     # 加载训练用数据集
     sample_rate = 16000
     train_dataset = WakeWordDataset(args.workspace, "train", window_size, window_stride, sample_rate) # 加载train数据集
-    dev_dataset = WakeWordDataset(args.workspace, "dev", window_size, window_stride, sample_rate) # 加载dev数据集
-    
     train_loader = DataLoader(
         train_dataset, 
         # 要加载的数据集对象，必须满足：
@@ -225,20 +223,25 @@ def train(args):
         prefetch_factor=4 # 预取因子，默认值: 2，每个工作进程预加载的数据批次倍数。每个工作进程预取的样本数 = prefetch_factor * batch_size。减少GPU等待时间: GPU处理完当前批次后，下一批次数据已准备就绪。增加内存占用: 每个工作进程都会缓存更多数据，总内存使用量增加
     )
     
-    dev_loader = DataLoader(
-        dev_dataset,
-        batch_size=args.batch_size,
-        shuffle=False,
-        num_workers=18,
-        pin_memory=args.use_gpu,
-        persistent_workers=False, # 保持工作进程存活，工作进程在整个DataLoader生命周期内保持活跃，避免了每个epoch结束时销毁进程、新epoch开始时重新创建进程的开销
-        prefetch_factor=4 # 预取因子，默认值: 2，每个工作进程预加载的数据批次倍数。每个工作进程预取的样本数 = prefetch_factor * batch_size。减少GPU等待时间: GPU处理完当前批次后，下一批次数据已准备就绪。增加内存占用: 每个工作进程都会缓存更多数据，总内存使用量增加
-    )
+    if not args.deploy_mode:
+        dev_dataset = WakeWordDataset(args.workspace, "dev", window_size, window_stride, sample_rate)
+        dev_loader = DataLoader(
+            dev_dataset,
+            batch_size=args.batch_size,
+            shuffle=False,
+            num_workers=18,
+            pin_memory=args.use_gpu,
+            persistent_workers=False,
+            prefetch_factor=4
+        )
+        logger.info(f"[INFO] Train dataset count(After deploy sliding window on neg dataset)")
+        logger.info(f"[INFO] Train samples count: {len(train_dataset)}")
+        logger.info(f"[INFO] Dev samples count: {len(dev_dataset)}")
+    else:
+        logger.info(f"[INFO] Running in deploy mode - no dev evaluation")
+        logger.info(f"[INFO] Train samples count: {len(train_dataset)}")
     
     # check dataset size
-    logger.info(f"[INFO] Train dataset count(After delploy sliding window on neg dataset)")
-    logger.info(f"[INFO] Train samples count: {len(train_dataset)}")
-    logger.info(f"[INFO] Dev samples count: {len(dev_dataset)}")
     logger.info(f"========================================")
     
     # 初始化模型
@@ -410,8 +413,20 @@ def train(args):
             # 记录日志
             logger.info(f"[INFO] Epoch {epoch+1}/{args.total_epochs} - Train Loss: {train_loss:.4f}, Acc(threshold=0.75): {train_acc:.4f}")
             
+            current_model_path = os.path.join(model_dir, f"model_{epoch+1}.pt")
+            current_model_info = {
+                'time': time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                'epoch': epoch + 1,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'window_size': window_size,
+                'window_stride': window_stride,
+                'model_version': args.model_version, 
+                'spec_group_num': args.spec_group_num
+            }
+            
             # 在dev集上评估（每eval_on_dev_epoch_stride步评估一次，最后一个epoch再评估一次）
-            if (epoch + 1) % args.eval_on_dev_epoch_stride == 0 or epoch == args.total_epochs - 1:
+            if not args.deploy_mode and ((epoch + 1) % args.eval_on_dev_epoch_stride == 0 or epoch == args.total_epochs - 1):
                 dev_metrics, dev_errors = evaluate_on_dev(
                     model, dev_loader, device, LogMelFeature, criterion, epoch+1, calculate_errors=True
                 )
@@ -421,56 +436,45 @@ def train(args):
                 
                 # 记录日志
                 logger.info(f"[INFO] Epoch {dev_metrics['epoch']} : Evaluate on Dev - " + 
-                           f"Loss: {dev_metrics['loss']:.4f}, AUCPR: {dev_metrics['aucpr']:.6f}, " + 
-                           f"Best F1: {dev_metrics['best_f1']:.4f} @ threshold={dev_metrics['best_threshold']:.2f} " +
-                           f"F1 Score: {dev_metrics['f1_scores']}"
-                           )
+                        f"Loss: {dev_metrics['loss']:.4f}, AUCPR: {dev_metrics['aucpr']:.6f}, " + 
+                        f"Best F1: {dev_metrics['best_f1']:.4f} @ threshold={dev_metrics['best_threshold']:.2f}")
                 
+                # 添加评估指标到模型信息
+                current_model_info['metrics'] = dev_metrics
                 
-                # 保存当前模型
-                current_model_path = os.path.join(model_dir, f"model_{epoch+1}.pt")
-                torch.save({
-                    'time': time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-                    'epoch': epoch + 1,
-                    'model_state_dict': model.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict(),
-                    'window_size': window_size,
-                    'window_stride': window_stride,
-                    'model_version': args.model_version, 
-                    'spec_group_num': args.spec_group_num, 
-                    'metrics': dev_metrics
-                }, current_model_path)
-                
-                # 更新最佳模型，更新依据：F1分数
+                # 更新最佳模型
                 if dev_metrics['aucpr'] > best_metrics.get('aucpr', 0):
                     best_metrics = {**dev_metrics, 'epoch': epoch + 1}
                     best_model_path = os.path.join(model_dir, "model_best.pt")
-                    torch.save({
-                        'time': time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), 
-                        'epoch': epoch + 1,
-                        'model_state_dict': model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'window_size': window_size,
-                        'window_stride': window_stride,
-                        'model_version': args.model_version, 
-                        'spec_group_num': args.spec_group_num, 
-                        'metrics': dev_metrics
-                    }, best_model_path)
+                    torch.save(current_model_info, best_model_path)
                     logger.info(f"[INFO] New best model saved! AUCPR: {best_metrics['aucpr']:.6f}")
+        
+            # 保存当前epoch模型
+            torch.save(current_model_info, current_model_path)
+            
+            if args.deploy_mode and epoch == args.total_epochs - 1:
+                best_model_path = os.path.join(model_dir, "model_best.pt")
+                torch.save(current_model_info, best_model_path)
+                logger.info(f"[INFO] Deploy mode: saved last model (epoch {epoch+1}) as best model")
     
     # 保存开发集错误记录
-    dev_errors_path = os.path.join(train_dir, "dev_errors.json")
-    with open(dev_errors_path, 'w') as f:
-        json.dump(all_dev_errors, f, indent=2)
+    if not args.deploy_mode:
+        dev_errors_path = os.path.join(train_dir, "dev_errors.json")
+        with open(dev_errors_path, 'w') as f:
+            json.dump(all_dev_errors, f, indent=2)
     
     # 训练完成日志
     logger.info("[INFO] Training completed!")
-    logger.info(f"[INFO] Best model (epoch {best_metrics['epoch']}):")
-    logger.info(f"  AUCPR: {best_metrics['aucpr']:.6f}")
-    logger.info(f"  Best F1: {best_metrics['best_f1']:.4f} @ threshold={best_metrics['best_threshold']:.2f}")
-    logger.info(f"  Loss: {best_metrics['loss']:.4f}")
-    logger.info(f"  F1 Score: {best_metrics['f1_scores']}")
-    logger.info(f"[INFO] Development errors saved to {dev_errors_path}")
+    if not args.deploy_mode:
+        logger.info(f"[INFO] Best model (epoch {best_metrics['epoch']}):")
+        logger.info(f"  AUCPR: {best_metrics['aucpr']:.6f}")
+        logger.info(f"  Best F1: {best_metrics['best_f1']:.4f} @ threshold={best_metrics['best_threshold']:.2f}")
+        logger.info(f"  Loss: {best_metrics['loss']:.4f}")
+        logger.info(f"  F1 Score: {best_metrics['f1_scores']}")
+        logger.info(f"[INFO] Development errors saved to {dev_errors_path}")
+    else:
+        logger.info(f"[INFO] Deploy mode: completed training without dev evaluation")
+        logger.info(f"[INFO] Last model (epoch {args.total_epochs}) saved as best model")
     logger.info(f"====================================")
 
 def parse_args():
@@ -489,6 +493,7 @@ def parse_args():
     parser.add_argument("--momentum", type=float, default=0.9, help="Momentum")
     parser.add_argument("--gpu", type=int, default=0, help="GPU ID")
     parser.add_argument("--use_gpu", action="store_true", help="Use GPU for training")
+    parser.add_argument("--deploy_mode", action="store_true", help="Deploy mode: no dev evaluation, save last model as best")
     
     return parser.parse_args()
 

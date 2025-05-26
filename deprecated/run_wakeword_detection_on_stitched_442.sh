@@ -10,12 +10,12 @@ set -e
 DEFAULT_WAKEWORD="hey fire fox" # 唤醒词
 # ======== 数据集设置 ========
 DEFAULT_NEG_SOURCE_DIR="/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/datasets/Common_Voice/en/Common_Voice_corpus_4_en_sampled_22500-5000-5000" # 负样本数据集路径
-DEFAULT_POS_SOURCE_DIR="/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/baselines/KWS/bcresnet/data/clone_dataset/clone_audio-openvoice-ref_hey_fire_fox_real_positive-442" # 正样本数据集路径
+DEFAULT_POS_SOURCE_DIR="/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/baselines/KWS/bcresnet/data/hey-fire-fox-stitched-442" # 正样本数据集路径
 DEFAULT_NOISE_SOURCE_DIR="/home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/baselines/KWS/bcresnet/data/MS-SNSD_noise_train_16khz" # 噪声源文件夹路径
 DEFAULT_NEGATIVE_TRAIN_DURATION=20000 # 负样本训练集时长（秒）
 DEFAULT_NEGATIVE_DEV_DURATION=4000 # 负样本验证集时长（秒）
 DEFAULT_NEGATIVE_TEST_DURATION=4000 # 负样本测试集时长（秒）
-DEFAULT_POSITIVE_TRAIN_DURATION=365 # 正样本训练集时长（秒）
+DEFAULT_POSITIVE_TRAIN_DURATION=500 # 正样本训练集时长（秒）
 DEFAULT_POSITIVE_DEV_DURATION=230 # 正样本验证集时长（秒）
 DEFAULT_POSITIVE_TEST_DURATION=220 # 正样本测试集时长（秒）
 # ======== 模型设置 ========
@@ -34,10 +34,10 @@ DEFAULT_MOMENTUM=0.9 # 动量
 # ======== 推理设置 ========
 # TODO: 需要添加推理阶段的参数设置
 # ======== 工作区设置 ========
-DEFAULT_WORKSPACE="./workspace/run_wakeword_detection_on_clone_openvoice_442" # 工作目录
+DEFAULT_WORKSPACE="./workspace/run_wakeword_detection_on_stitched_442" # 工作目录
 # ======== 设备设置 ========
 DEFAULT_USE_GPU="true" # 是否使用GPU
-DEFAULT_GPUS="4" # GPU设备ID,目前仅支持单GPU训练
+DEFAULT_GPUS="3" # GPU设备ID,目前仅支持单GPU训练
 # ======== 实验设置 ========
 DEFAULT_RUN_STAGE="1 2 3 4 5 6" # 指定要执行的阶段 (1-5)，用空格分隔
 

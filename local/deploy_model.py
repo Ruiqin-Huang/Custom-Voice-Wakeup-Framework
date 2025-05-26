@@ -44,7 +44,10 @@ import torch
 import torch.nn as nn
 from threading import Thread, Event
 import queue
-import sounddevice as sd
+try:
+    import sounddevice as sd
+except ImportError:
+    sd = None
 import librosa
 import matplotlib.pyplot as plt
 from tqdm import tqdm
@@ -85,8 +88,34 @@ def setup_logger(workspace):
     
     return logger
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="唤醒词检测模型部署工具")
+    
+    subparsers = parser.add_subparsers(dest="command", help="命令")
+    
+    # 导出模型命令
+    export_parser = subparsers.add_parser("export", help="导出模型")
+    export_parser.add_argument("--workspace", type=str, required=True, help="工作目录")
+    export_parser.add_argument("--onnx_output", type=str, help="输出ONNX文件路径")
+    
+    # 处理音频文件命令
+    process_parser = subparsers.add_parser("process", help="处理音频文件")
+    process_parser.add_argument("--model", type=str, required=True, help="模型路径")
+    process_parser.add_argument("--audio", type=str, required=True, help="音频文件路径")
+    process_parser.add_argument("--threshold", type=float, help="检测阈值")
+    process_parser.add_argument("--visualize", action="store_true", help="可视化结果")
+    
+    # 实时检测命令
+    realtime_parser = subparsers.add_parser("realtime", help="实时检测")
+    realtime_parser.add_argument("--model", type=str, required=True, help="模型路径")
+    realtime_parser.add_argument("--threshold", type=float, help="检测阈值")
+    
+    return parser.parse_args()
+
+args = parse_args()
+
 # 修改初始化日志记录器的调用
-logger = setup_logger(workspace="路径到你的工作区")  # 替换为实际工作区路径
+logger = setup_logger(workspace=args.workspace)  # 替换为实际工作区路径
 
 class WakeWordDetectorDeployer:
     def __init__(self, model_path, threshold=None, nms_window=None, nms_threshold=0.6):
@@ -172,20 +201,15 @@ class WakeWordDetectorDeployer:
         
         # 导出模型
         try:
-            torch.onnx.export(
-                self.model,
-                dummy_input,
-                output_path,
-                export_params=True,
-                opset_version=11,
-                do_constant_folding=True,
-                input_names=['input'],
-                output_names=['output'],
-                dynamic_axes={
-                    'input': {0: 'batch_size'},
-                    'output': {0: 'batch_size'}
-                }
-            )
+            import warnings
+            import io
+            import contextlib
+            # 禁用Dynamo的警告信息
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                # 同时捕获标准输出和标准错误
+                with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                    torch.onnx.dynamo_export(self.model, dummy_input).save(output_path)
             logger.info("ONNX模型导出成功")
             return True
         except Exception as e:
@@ -366,6 +390,10 @@ class WakeWordDetectorDeployer:
             callback: 检测到唤醒词时的回调函数，格式为callback(timestamp, score)
             block: 是否阻塞当前线程
         """
+        if sd is None:
+            logger.error("无法启动实时检测：sounddevice模块未安装")
+            return False
+        
         if self.is_running:
             logger.warning("实时检测已经在运行")
             return False
@@ -463,36 +491,11 @@ class WakeWordDetectorDeployer:
         logger.info("实时检测已停止")
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="唤醒词检测模型部署工具")
-    
-    subparsers = parser.add_subparsers(dest="command", help="命令")
-    
-    # 导出模型命令
-    export_parser = subparsers.add_parser("export", help="导出模型")
-    export_parser.add_argument("--workspace", type=str, required=True, help="工作目录")
-    export_parser.add_argument("--onnx_output", type=str, help="输出ONNX文件路径")
-    
-    # 处理音频文件命令
-    process_parser = subparsers.add_parser("process", help="处理音频文件")
-    process_parser.add_argument("--model", type=str, required=True, help="模型路径")
-    process_parser.add_argument("--audio", type=str, required=True, help="音频文件路径")
-    process_parser.add_argument("--threshold", type=float, help="检测阈值")
-    process_parser.add_argument("--visualize", action="store_true", help="可视化结果")
-    
-    # 实时检测命令
-    realtime_parser = subparsers.add_parser("realtime", help="实时检测")
-    realtime_parser.add_argument("--model", type=str, required=True, help="模型路径")
-    realtime_parser.add_argument("--threshold", type=float, help="检测阈值")
-    
-    return parser.parse_args()
-
-
 def main():
-    args = parse_args()
-    
     # 使用参数中的 workspace 初始化日志记录器
-    logger = setup_logger(workspace=args.workspace)
+    global logger
+    if hasattr(args, 'workspace'):
+        logger = setup_logger(workspace=args.workspace)
     
     if args.command == "export":
         # 加载模型

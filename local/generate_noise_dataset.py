@@ -74,7 +74,7 @@ def get_audio_files(source_dir):
     
     return audio_files
 
-def process_audio_file(source_path, output_dir):
+def process_audio_file(source_path, output_dir, verbose=False):
     """处理单个音频文件：重采样为16kHz并保存为WAV格式"""
     try:
         # 获取文件名并创建输出路径
@@ -83,8 +83,7 @@ def process_audio_file(source_path, output_dir):
         
         # 如果文件已存在则跳过
         if os.path.exists(output_path):
-            logging.info(f"[INFO] 文件已存在，跳过: {output_path}")
-            return True
+            return True, 0  # 返回成功标志和持续时间0（表示跳过）
         
         # 加载并重采样音频
         y, sr = librosa.load(source_path, sr=None)
@@ -93,14 +92,14 @@ def process_audio_file(source_path, output_dir):
         # 保存为16kHz WAV文件
         sf.write(output_path, y_resampled, 16000)
         
-        # 记录成功信息
+        # 计算持续时间
         duration = librosa.get_duration(y=y_resampled, sr=16000)
-        logging.info(f"[INFO] 已处理 {source_path} -> {output_path} (时长: {duration:.2f}秒)")
-        return True
+        return True, duration
         
     except Exception as e:
-        logging.error(f"[ERROR] 处理 {source_path} 时出错: {str(e)}")
-        return False
+        if verbose:
+            logging.error(f"[ERROR] 处理 {source_path} 时出错: {str(e)}")
+        return False, 0
 
 def main():
     import argparse
@@ -134,11 +133,28 @@ def main():
         
         # 处理每个文件
         success_count = 0
-        for audio_file in tqdm(audio_files, desc="处理噪声文件中"):
-            if process_audio_file(audio_file, audio_dir):
-                success_count += 1
+        error_count = 0
+        skipped_count = 0
+        total_duration = 0
         
-        logging.info(f"[INFO] 成功处理了 {success_count}/{len(audio_files)} 个文件")
+        # 使用tqdm显示进度条
+        for audio_file in tqdm(audio_files, desc="处理噪声文件"):
+            success, duration = process_audio_file(audio_file, audio_dir)
+            if success:
+                success_count += 1
+                total_duration += duration
+                if duration == 0:  # 文件已存在被跳过
+                    skipped_count += 1
+            else:
+                error_count += 1
+        
+        # 只在结束时打印汇总信息
+        logging.info(f"[INFO] 噪声处理统计:")
+        logging.info(f"[INFO] - 总文件数: {len(audio_files)}")
+        logging.info(f"[INFO] - 成功处理: {success_count - skipped_count} 个文件")
+        logging.info(f"[INFO] - 跳过已存在: {skipped_count} 个文件")
+        logging.info(f"[INFO] - 处理失败: {error_count} 个文件")
+        logging.info(f"[INFO] - 总音频时长: {total_duration:.2f}秒 ({total_duration/60:.2f}分钟)")
         logging.info(f"[INFO] 噪声数据集生成完成")
         logging.info("====================================")
         

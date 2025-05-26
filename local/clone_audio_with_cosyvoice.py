@@ -6,6 +6,9 @@ import torchaudio
 import logging
 from tqdm import tqdm
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(script_dir, 'cosyvoice/third_party/Matcha-TTS'))
+
 '''
 # 调用样例
 python clone_audio_with_cosyvoice.py --reference_audio_dir /hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/datasets/Hey-Fire-Fox/hey-fire-fox-real/clips --num_samples 442 --wakeword "hey fire fox" --workspace /hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/baselines/KWS/bcresnet/data/clone_dataset --model_path /hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/baselines/KWS/bcresnet/local/cosyvoice/pretrained_models/CosyVoice2-0.5B --output_audio_dir "$pos_source_dir"
@@ -45,15 +48,14 @@ def setup_logger(workspace):
 
 # 确保可以找到CosyVoice模块
 # 您可能需要根据您的项目结构调整此路径
-sys.path.append('cosyvoice/third_party/Matcha-TTS') # 假设CosyVoice在您的项目中的这个路径下
+sys.path.append('./cosyvoice/third_party/Matcha-TTS') # 假设CosyVoice在您的项目中的这个路径下
 try:
     from cosyvoice.cli.cosyvoice import CosyVoice2
     from cosyvoice.utils.file_utils import load_wav
 except ImportError:
     logging.error("[ERROR] 无法导入CosyVoice模块。请确保：")
-    logging.error("[ERROR] 1. 'third_party/Matcha-TTS' 路径正确，并且包含CosyVoice库。")
+    logging.error("[ERROR] 1. 'cosyvoice/third_party/Matcha-TTS' 路径正确，并且包含CosyVoice库。")
     logging.error("[ERROR] 2. CosyVoice及其依赖已正确安装。")
-    logging.error("[ERROR] 您可以尝试将 'third_party/Matcha-TTS' 的绝对路径添加到PYTHONPATH环境变量中。")
     sys.exit(1)
 
 def get_transcription_from_lab(audio_path):
@@ -82,7 +84,7 @@ def clone_audio(args):
     # 设置日志记录器
     logger = setup_logger(args.workspace)
     
-    logging.info(f"======== AUDIO CLONING WITH COSYVOICE ========")
+    logging.info(f"======== 使用COSYVOICE 2 克隆音频 ========")
     
     # 检查参考音频目录是否存在
     if not os.path.isdir(args.reference_audio_dir):
