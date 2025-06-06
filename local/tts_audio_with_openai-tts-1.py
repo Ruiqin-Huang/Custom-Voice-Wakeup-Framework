@@ -13,10 +13,10 @@ python tts_audio_with_tts-1.py \
   --num_samples 442 \
   --text_to_generate "hey fire fox" \
   --workspace /path/to/your/workspace \
-  --api_key "sk-XEQpaCeoDgTSHBozB800Ec195e0a48B395E482F9922713Fb" \
+  --api_key "your openai-api-key" \
   --base_url "https://api.shubiaobiao.cn/v1/"
   
-python tts_audio_with_tts-1.py --num_samples 442 --text_to_generate "hey fire fox" --workspace /home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/baselines/KWS/bcresnet/data/tts_dataset --api_key "sk-XEQpaCeoDgTSHBozB800Ec195e0a48B395E482F9922713Fb" --base_url "https://api.shubiaobiao.cn/v1/"
+python tts_audio_with_tts-1.py --num_samples 442 --text_to_generate "hey fire fox" --workspace /home/hrq/DHG-Workspace/Research_on_Low-Cost_Custom_Voice_Wake-Up_Based_on_Voice_Cloning/baselines/KWS/bcresnet/data/tts_dataset --api_key "your openai-api-key" --base_url "https://api.shubiaobiao.cn/v1/"
 """
 
 def generate_tts_samples(args):
